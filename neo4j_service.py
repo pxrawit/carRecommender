@@ -33,7 +33,11 @@ def _config() -> tuple[str, str, str, str | None]:
 def get_driver():
     """สร้าง Neo4j Driver ครั้งเดียวต่อ Streamlit process"""
     uri, username, password, _ = _config()
-    driver = GraphDatabase.driver(uri, auth=(username, password))
+    driver = GraphDatabase.driver(
+        uri,
+        auth=(username, password),
+        notifications_min_severity="OFF",  # ปิด warning เช่น "property image does not exist" ใน log
+    )
     driver.verify_connectivity()
     return driver
 
