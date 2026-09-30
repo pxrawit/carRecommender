@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import html
 from datetime import date
 from pathlib import Path
 
@@ -21,9 +23,12 @@ from neo4j_service import (
     get_test_drives,
     get_users,
     IMAGE_DIR,
+    MODEL_DIR,
     default_image_path,
+    default_model_path,
     image_slug,
     set_car_image,
+    set_car_model,
     graph_edges,
     list_brands,
     ping,
@@ -120,18 +125,86 @@ def user_selector(key: str) -> str:
 
 APP_DIR = Path(__file__).resolve().parent
 IMAGE_TYPES = ["png", "jpg", "jpeg", "webp"]
+MODEL_TYPES = ["glb"]
+MODEL_VIEWER_JS = "https://cdn.jsdelivr.net/npm/@google/model-viewer@4.3.1/dist/model-viewer.min.js"
+MAX_MODEL_MB = 25  # ไฟล์ในเครื่องจะถูกฝังเป็น base64 ไฟล์ใหญ่กว่านี้ให้ใช้ URL แทน
 
 
-def resolve_image(path: str | None) -> str | None:
-    """แปลง path ที่เก็บใน Neo4j ให้เป็นไฟล์จริงใน repo หรือ URL  ถ้าหาไม่เจอคืน None"""
-    if not path:
+def is_url(path: str) -> bool:
+    return path.startswith(("http://", "https://"))
+
+
+def resolve_local(path: str | None) -> Path | None:
+    """แปลง path ที่เก็บใน Neo4j เป็นไฟล์จริงในโฟลเดอร์แอป  ถ้าไม่มีหรืออยู่นอกโฟลเดอร์คืน None"""
+    if not path or is_url(path):
         return None
-    if path.startswith(("http://", "https://")):
-        return path
     file = (APP_DIR / path).resolve()
     if APP_DIR not in file.parents or not file.is_file():  # กันไม่ให้อ่านไฟล์นอกโฟลเดอร์แอป
         return None
-    return str(file)
+    return file
+
+
+def resolve_image(path: str | None) -> str | None:
+    """คืน URL หรือ path ไฟล์รูปที่ใช้ได้จริง  ถ้าหาไม่เจอคืน None"""
+    if path and is_url(path):
+        return path
+    file = resolve_local(path)
+    return str(file) if file else None
+
+
+@st.cache_data(show_spinner=False)
+def _glb_data_uri(file: str, mtime: float) -> str:
+    return "data:model/gltf-binary;base64," + base64.b64encode(Path(file).read_bytes()).decode()
+
+
+def model_src(path: str | None) -> str | None:
+    """คืน src สำหรับ <model-viewer>: URL ตรง ๆ หรือไฟล์ใน repo ที่แปลงเป็น data URI"""
+    if path and is_url(path):
+        return path
+    file = resolve_local(path)
+    if not file:
+        return None
+    if file.stat().st_size > MAX_MODEL_MB * 1024 * 1024:
+        st.warning(f"{path} ใหญ่เกิน {MAX_MODEL_MB} MB ให้ใช้ URL (เช่น raw.githubusercontent.com) แทน")
+        return None
+    return _glb_data_uri(str(file), file.stat().st_mtime)
+
+
+def show_3d(model_path: str | None, image_path: str | None = None, height: int = 420, alt: str = "car") -> None:
+    """แสดงโมเดล 3D หมุน/ซูมได้  ถ้ายังไม่มีโมเดลจะแสดงรูปแทน"""
+    src = model_src(model_path)
+    if not src:
+        show_car_image(image_path)
+        st.caption("ยังไม่มีโมเดล 3D ของรถคันนี้")
+        return
+    viewer = f"""
+        <script type="module" src="{MODEL_VIEWER_JS}"></script>
+        <style>
+          html, body {{ margin: 0; background: transparent; font-family: sans-serif; }}
+          model-viewer {{
+            width: 100%; height: {height}px; border-radius: 18px;
+            background: radial-gradient(circle at 50% 35%, #f8fafc 0%, #cbd5e1 70%, #94a3b8 100%);
+            --progress-bar-color: #0369a1;
+          }}
+          .hint {{
+            position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+            font-size: 12px; color: #334155; background: rgba(255,255,255,.75);
+            padding: 4px 10px; border-radius: 999px;
+          }}
+        </style>
+        <model-viewer src="{html.escape(src, quote=True)}" alt="{html.escape(alt, quote=True)}"
+            camera-controls auto-rotate rotation-per-second="18deg"
+            camera-orbit="35deg 72deg auto" shadow-intensity="1" shadow-softness="0.8"
+            exposure="1.05" environment-image="neutral"
+            interaction-prompt="none" touch-action="pan-y">
+          <div class="hint">🖱️ ลากเพื่อหมุน · scroll เพื่อซูม · คลิกขวาลากเพื่อเลื่อน</div>
+        </model-viewer>
+        """
+    if hasattr(st, "iframe"):  # Streamlit รุ่นใหม่
+        st.iframe(viewer, height=height + 8)
+    else:  # Streamlit รุ่นเก่า
+        import streamlit.components.v1 as components
+        components.html(viewer, height=height + 8)
 
 
 def show_car_image(path: str | None, caption: str | None = None) -> None:
@@ -144,13 +217,21 @@ def show_car_image(path: str | None, caption: str | None = None) -> None:
             st.caption(caption)
 
 
-def save_uploaded_image(car_name: str, uploaded) -> str:
-    """บันทึกไฟล์ที่อัปโหลดลง images/<ชื่อรถ>.<นามสกุล> แล้วคืน path แบบ relative"""
-    ext = Path(uploaded.name).suffix.lower() or ".png"
-    rel = f"{IMAGE_DIR}/{image_slug(car_name)}{ext}"
-    (APP_DIR / IMAGE_DIR).mkdir(exist_ok=True)
+def save_upload(car_name: str, uploaded, folder: str, default_ext: str) -> str:
+    """บันทึกไฟล์ที่อัปโหลดลง <folder>/<ชื่อรถ>.<นามสกุล> แล้วคืน path แบบ relative"""
+    ext = Path(uploaded.name).suffix.lower() or default_ext
+    rel = f"{folder}/{image_slug(car_name)}{ext}"
+    (APP_DIR / folder).mkdir(exist_ok=True)
     (APP_DIR / rel).write_bytes(uploaded.getvalue())
     return rel
+
+
+def save_uploaded_image(car_name: str, uploaded) -> str:
+    return save_upload(car_name, uploaded, IMAGE_DIR, ".png")
+
+
+def save_uploaded_model(car_name: str, uploaded) -> str:
+    return save_upload(car_name, uploaded, MODEL_DIR, ".glb")
 
 
 def car_gallery(rows: list[dict], name_key: str = "car", cols: int = 4, detail=None) -> None:
@@ -208,7 +289,7 @@ with st.sidebar:
     st.caption("Neo4j Aura + Streamlit")
     page = st.radio(
         "เมนู",
-        ["Dashboard", "Recommendations", "Car Search", "จัดการข้อมูล", "Graph Explorer", "Admin / Setup"],
+        ["Dashboard", "Recommendations", "Car Search", "3D Showroom", "จัดการข้อมูล", "Graph Explorer", "Admin / Setup"],
     )
     st.divider()
     st.caption("Car Recommender System ด้วย Graph Database")
@@ -313,6 +394,12 @@ elif page == "Recommendations":
             unsafe_allow_html=True,
         )
 
+    if rows:
+        st.divider()
+        pick = st.selectbox("🧊 ดูรถที่แนะนำแบบ 3D", [r["car"] for r in rows], key="rec_3d")
+        chosen = next(r for r in rows if r["car"] == pick)
+        show_3d(chosen.get("model"), chosen.get("image"), height=380, alt=pick)
+
 # =====================================================================
 # Car Search
 # =====================================================================
@@ -327,6 +414,46 @@ elif page == "Car Search":
     with st.expander("ดูแบบตาราง"):
         st.dataframe(df(rows, ["car", "brand", "image", "likes", "test_drives", "liked_by"]),
                      width="stretch", hide_index=True)
+
+# =====================================================================
+# 3D Showroom
+# =====================================================================
+elif page == "3D Showroom":
+    st.subheader("🧊 3D Showroom")
+    cars = get_cars()
+    if not cars:
+        st.info("ยังไม่มีรถ กรุณาไปหน้า จัดการข้อมูล หรือ Admin / Setup ก่อน")
+        st.stop()
+
+    target = st.selectbox("เลือกรถ", [c["name"] for c in cars], key="showroom_car")
+    car = next(c for c in cars if c["name"] == target)
+
+    left, right = st.columns([3, 1.3])
+    with left:
+        show_3d(car.get("model"), car.get("image"), height=480, alt=target)
+    with right:
+        st.markdown(f"## {target}")
+        st.caption(car.get("brand") or "ไม่ระบุยี่ห้อ")
+        m1, m2 = st.columns(2)
+        m1.metric("❤️ LIKES", car["likes"])
+        m2.metric("🔑 TEST_DROVE", car["test_drives"])
+        detail = next((r for r in search_cars(target) if r["car"] == target), None)
+        liked_by = (detail or {}).get("liked_by") or []
+        st.markdown("**คนที่ชอบ:** " + (", ".join(sorted(liked_by)) or "ยังไม่มี"))
+
+        st.divider()
+        names = user_names()
+        if names:
+            who = st.selectbox("ในนามของ User", names, key="showroom_user")
+            if st.button("❤️ ชอบรถคันนี้", width="stretch"):
+                if add_like(who, target):
+                    flash(f"{who} -[:LIKES]-> {target}")
+                else:
+                    st.info(f"{who} ชอบ {target} อยู่แล้ว")
+            if st.button("🔑 บันทึกทดลองขับวันนี้", type="primary", width="stretch"):
+                add_test_drive(who, target, date.today().isoformat())
+                flash(f"{who} -[:TEST_DROVE {{{date.today().isoformat()}}}]-> {target}")
+        st.caption(f"model: {car.get('model') or '-'}")
 
 # =====================================================================
 # จัดการข้อมูล (เพิ่ม / ลบ)
@@ -368,7 +495,8 @@ elif page == "จัดการข้อมูล":
     # ---------------- Car ----------------
     with tab_car:
         cars = get_cars()
-        st.dataframe(df(cars, ["name", "brand", "image", "likes", "test_drives"]), width="stretch", hide_index=True)
+        st.dataframe(df(cars, ["name", "brand", "image", "model", "likes", "test_drives"]),
+                     width="stretch", hide_index=True)
 
         c1, c2 = st.columns(2)
         with c1:
@@ -379,6 +507,9 @@ elif page == "จัดการข้อมูล":
                 car_upload = st.file_uploader("รูปรถ (ไม่บังคับ)", type=IMAGE_TYPES)
                 car_path = st.text_input("หรือใส่ path/URL ของรูป",
                                          placeholder="เช่น images/toyota_fortuner.jpg")
+                model_upload = st.file_uploader("โมเดล 3D .glb (ไม่บังคับ)", type=MODEL_TYPES)
+                model_path = st.text_input("หรือใส่ path/URL ของโมเดล",
+                                           placeholder="เช่น models/toyota_fortuner.glb")
                 if st.form_submit_button("เพิ่ม", type="primary", width="stretch"):
                     if not car_name.strip():
                         st.error("กรุณาใส่ชื่อรุ่น")
@@ -392,7 +523,15 @@ elif page == "จัดการข้อมูล":
                             image_value = default_image_path(car_name)  # มีไฟล์ชื่อตรงกันใน repo อยู่แล้ว
                         else:
                             image_value = ""
-                        if add_car(car_name, brand_value, image_value):
+                        if model_upload is not None:
+                            model_value = save_uploaded_model(car_name, model_upload)
+                        elif model_path.strip():
+                            model_value = model_path.strip()
+                        elif resolve_local(default_model_path(car_name)):
+                            model_value = default_model_path(car_name)  # มีไฟล์ชื่อตรงกันใน repo อยู่แล้ว
+                        else:
+                            model_value = ""
+                        if add_car(car_name, brand_value, image_value, model_value):
                             flash(f"เพิ่ม Car '{car_name.strip()}' ({brand_value}) แล้ว")
                         else:
                             flash(f"มี '{car_name.strip()}' อยู่แล้ว อัปเดตยี่ห้อเป็น {brand_value}", "info")
@@ -410,14 +549,16 @@ elif page == "จัดการข้อมูล":
                 st.info("ยังไม่มีรถ")
 
         st.divider()
-        st.markdown("#### 🖼️ เปลี่ยนรูปรถ")
+        st.markdown("#### 🖼️ เปลี่ยนรูป / โมเดล 3D")
         if cars:
-            c1, c2 = st.columns([1, 2])
-            target = c2.selectbox("เลือกรถ", [c["name"] for c in cars], key="img_car")
-            current = next(c for c in cars if c["name"] == target).get("image")
-            with c1:
+            target = st.selectbox("เลือกรถ", [c["name"] for c in cars], key="img_car")
+            car = next(c for c in cars if c["name"] == target)
+            img_col, model_col = st.columns(2)
+
+            with img_col:
+                st.markdown("**รูป**")
+                current = car.get("image")
                 show_car_image(current, caption=current or "ยังไม่มี path รูป")
-            with c2:
                 new_upload = st.file_uploader("อัปโหลดรูปใหม่", type=IMAGE_TYPES, key=f"img_up_{target}")
                 new_path = st.text_input("หรือใส่ path/URL", value=current or "", key=f"img_path_{target}")
                 b1, b2 = st.columns(2)
@@ -427,11 +568,30 @@ elif page == "จัดการข้อมูล":
                     flash(f"อัปเดตรูปของ {target} เป็น {value or '(ไม่มีรูป)'}")
                 if b2.button("ลบรูปออกจากรถ", width="stretch"):
                     set_car_image(target, None)
-                    flash(f"ลบ path รูปของ {target} แล้ว (ไฟล์ใน images/ ยังอยู่)", "warning")
+                    flash(f"ลบ path รูปของ {target} แล้ว (ไฟล์ใน {IMAGE_DIR}/ ยังอยู่)", "warning")
+
+            with model_col:
+                st.markdown("**โมเดล 3D**")
+                current_model = car.get("model")
+                show_3d(current_model, None, height=260, alt=target)
+                st.caption(current_model or "ยังไม่มี path โมเดล")
+                new_model = st.file_uploader("อัปโหลดโมเดล .glb", type=MODEL_TYPES, key=f"model_up_{target}")
+                new_model_path = st.text_input("หรือใส่ path/URL", value=current_model or "",
+                                               key=f"model_path_{target}")
+                b1, b2 = st.columns(2)
+                if b1.button("บันทึกโมเดล", type="primary", width="stretch"):
+                    value = (save_uploaded_model(target, new_model) if new_model is not None
+                             else new_model_path.strip())
+                    set_car_model(target, value)
+                    flash(f"อัปเดตโมเดลของ {target} เป็น {value or '(ไม่มีโมเดล)'}")
+                if b2.button("ลบโมเดลออกจากรถ", width="stretch"):
+                    set_car_model(target, None)
+                    flash(f"ลบ path โมเดลของ {target} แล้ว (ไฟล์ใน {MODEL_DIR}/ ยังอยู่)", "warning")
+
             st.caption(
-                f"รูปที่อัปโหลดจะถูกบันทึกเป็น {IMAGE_DIR}/<ชื่อรถ>.<นามสกุล> ในโฟลเดอร์แอป "
+                f"ไฟล์ที่อัปโหลดจะถูกบันทึกเป็น {IMAGE_DIR}/<ชื่อรถ>.<นามสกุล> และ {MODEL_DIR}/<ชื่อรถ>.glb "
                 "ถ้ารันในเครื่องต้อง commit + push ไฟล์นั้นขึ้น GitHub ด้วย "
-                "บน Streamlit Cloud ไฟล์ที่อัปโหลดจะหายเมื่อแอปรีสตาร์ต ให้ใส่รูปใน repo แล้วกรอก path แทน"
+                "บน Streamlit Cloud ไฟล์ที่อัปโหลดจะหายเมื่อแอปรีสตาร์ต ให้ใส่ไฟล์ใน repo แล้วกรอก path แทน"
             )
 
     # ---------------- LIKES ----------------
@@ -525,7 +685,7 @@ elif page == "Admin / Setup":
         """
         **Graph schema**
         - `(:User {name})`
-        - `(:Car {name, brand})`
+        - `(:Car {name, brand, image, model})`
         - `(:User)-[:LIKES]->(:Car)`
         - `(:User)-[:TEST_DROVE {test_date}]->(:Car)`
         """
