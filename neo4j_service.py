@@ -8,7 +8,7 @@ from neo4j import GraphDatabase, RoutingControl
 # =====================================================================
 # Graph schema
 #   (:User {name})
-#   (:Car  {name, brand})
+#   (:Car  {name, brand, image})   image = path ในโฟลเดอร์ images/ ของ repo (หรือ URL)
 #   (:User)-[:LIKES]->(:Car)
 #   (:User)-[:TEST_DROVE {test_date}]->(:Car)
 # =====================================================================
@@ -56,6 +56,19 @@ def ping() -> bool:
 # ---------------------------------------------------------------------
 # Schema + demo data
 # ---------------------------------------------------------------------
+IMAGE_DIR = "images"
+
+
+def image_slug(name: str) -> str:
+    """'Mazda CX-5' -> 'mazda_cx-5'  ใช้ตั้งชื่อไฟล์รูป"""
+    out = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in name.strip().lower())
+    return "_".join(filter(None, out.split("_")))
+
+
+def default_image_path(name: str) -> str:
+    return f"{IMAGE_DIR}/{image_slug(name)}.png"
+
+
 DEMO_USERS = ["Alice", "Bob", "Charlie", "David", "Emma", "Frank", "Grace", "Henry", "Ivy", "Jack"]
 
 DEMO_CARS = [
@@ -70,6 +83,8 @@ DEMO_CARS = [
     {"name": "Honda Accord", "brand": "Honda"},
     {"name": "Mazda CX-5", "brand": "Mazda"},
 ]
+for _car in DEMO_CARS:
+    _car["image"] = default_image_path(_car["name"])
 
 DEMO_LIKES = [
     ("Alice", "Toyota Yaris"), ("Alice", "Honda City"), ("Alice", "Toyota Corolla"),
@@ -111,7 +126,12 @@ def seed_demo_data() -> None:
     create_schema()
     query("UNWIND $rows AS name MERGE (:User {name: name})", {"rows": DEMO_USERS}, write=True)
     query(
-        "UNWIND $rows AS row MERGE (c:Car {name: row.name}) SET c.brand = row.brand",
+        """
+        UNWIND $rows AS row
+        MERGE (c:Car {name: row.name})
+        SET c.brand = row.brand,
+            c.image = coalesce(c.image, row.image)
+        """,
         {"rows": DEMO_CARS},
         write=True,
     )
@@ -164,7 +184,7 @@ def get_cars() -> list[dict[str, Any]]:
     return query(
         """
         MATCH (c:Car)
-        RETURN c.name AS name, c.brand AS brand,
+        RETURN c.name AS name, c.brand AS brand, c.image AS image,
                COUNT { ()-[:LIKES]->(c) } AS likes,
                COUNT { ()-[:TEST_DROVE]->(c) } AS test_drives
         ORDER BY name
@@ -193,7 +213,7 @@ def popular_cars(limit: int = 10) -> list[dict[str, Any]]:
     return query(
         """
         MATCH (c:Car)
-        RETURN c.name AS car, c.brand AS brand,
+        RETURN c.name AS car, c.brand AS brand, c.image AS image,
                COUNT { ()-[:LIKES]->(c) } AS likes,
                COUNT { ()-[:TEST_DROVE]->(c) } AS test_drives
         ORDER BY likes DESC, test_drives DESC, car
@@ -208,9 +228,9 @@ def get_profile(name: str) -> dict[str, Any] | None:
         """
         MATCH (u:User {name:$name})
         RETURN u.name AS name,
-               [(u)-[:LIKES]->(c:Car) | {car: c.name, brand: c.brand}] AS liked,
+               [(u)-[:LIKES]->(c:Car) | {car: c.name, brand: c.brand, image: c.image}] AS liked,
                [(u)-[r:TEST_DROVE]->(c:Car) |
-                    {car: c.name, brand: c.brand, test_date: toString(r.test_date)}] AS test_drives
+                    {car: c.name, brand: c.brand, image: c.image, test_date: toString(r.test_date)}] AS test_drives
         """,
         {"name": name},
     )
@@ -255,7 +275,7 @@ def recommend_cars(name: str, mode: str = "test_drive", exclude_test_driven: boo
           AND NOT EXISTS { MATCH (me)-[:TEST_DROVE]->(car) }
         """
     cypher += """
-        RETURN car.name AS car, car.brand AS brand,
+        RETURN car.name AS car, car.brand AS brand, car.image AS image,
                count(*) AS score,
                collect(DISTINCT other.name) AS via_users,
                collect(DISTINCT shared.name) AS shared_cars
@@ -271,7 +291,7 @@ def search_cars(keyword: str = "", brand: str = "") -> list[dict[str, Any]]:
         MATCH (c:Car)
         WHERE ($keyword = '' OR toLower(c.name) CONTAINS toLower($keyword))
           AND ($brand = '' OR c.brand = $brand)
-        RETURN c.name AS car, c.brand AS brand,
+        RETURN c.name AS car, c.brand AS brand, c.image AS image,
                COUNT { ()-[:LIKES]->(c) } AS likes,
                COUNT { ()-[:TEST_DROVE]->(c) } AS test_drives,
                [(u:User)-[:LIKES]->(c) | u.name] AS liked_by
@@ -352,20 +372,38 @@ def delete_user(name: str) -> int:
     return rows[0]["deleted"] if rows else 0
 
 
-def add_car(name: str, brand: str) -> bool:
-    """คืน True ถ้าสร้างใหม่, False ถ้ามีอยู่แล้ว (จะอัปเดตยี่ห้อให้)"""
+def add_car(name: str, brand: str, image: str = "") -> bool:
+    """
+    คืน True ถ้าสร้างใหม่, False ถ้ามีอยู่แล้ว (จะอัปเดตยี่ห้อ และรูปถ้าส่งมา)
+    image = path ของรูปใน repo เช่น images/toyota_yaris.png หรือ URL
+    """
     rows = query(
         """
         OPTIONAL MATCH (x:Car {name:$name})
         WITH x IS NULL AS created
         MERGE (c:Car {name:$name})
-        SET c.brand = $brand
+        SET c.brand = $brand,
+            c.image = CASE WHEN $image = '' THEN c.image ELSE $image END
         RETURN created
         """,
-        {"name": name.strip(), "brand": brand.strip()},
+        {"name": name.strip(), "brand": brand.strip(), "image": (image or "").strip()},
         write=True,
     )
     return bool(rows and rows[0]["created"])
+
+
+def set_car_image(name: str, image: str | None) -> int:
+    """เปลี่ยน path รูปของรถ ส่ง None หรือ '' เพื่อลบรูปออกจาก node"""
+    rows = query(
+        """
+        MATCH (c:Car {name:$name})
+        SET c.image = CASE WHEN $image = '' THEN null ELSE $image END
+        RETURN count(c) AS updated
+        """,
+        {"name": name, "image": (image or "").strip()},
+        write=True,
+    )
+    return rows[0]["updated"] if rows else 0
 
 
 def delete_car(name: str) -> int:
