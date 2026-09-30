@@ -5,6 +5,9 @@
 car_app/
 ├── app.py
 ├── neo4j_service.py
+├── background3d.py             ← ฝังฉาก 3D เป็นพื้นหลัง
+├── bg3d/showroom_scene.html    ← ฉากโรงจอด Three.js (แก้แสง/สี/มุมกล้องได้ที่นี่)
+├── static/showroom.glb         ← (ไม่บังคับ) โมเดลโชว์รูมของตัวเอง
 ├── requirements.txt
 ├── images/                     ← รูปรถ (commit ขึ้น GitHub)
 │   ├── toyota_yaris.png
@@ -13,6 +16,7 @@ car_app/
 │   ├── toyota_yaris.glb
 │   └── ...
 └── .streamlit/
+    ├── config.toml             ← ธีมมืด + เปิด static file serving
     └── secrets.toml            ← ห้าม commit (อยู่ใน .gitignore)
 ```
 
@@ -32,6 +36,12 @@ car_app/
 - ไฟล์ในเครื่องใหญ่ได้ไม่เกิน 25 MB (ถูกฝังเข้าเพจ) ถ้าใหญ่กว่านั้นให้ใส่ URL แทน เช่น
   `https://raw.githubusercontent.com/<user>/<repo>/main/models/xxx.glb`
 - ตัวแสดงผลใช้ `<model-viewer>` ของ Google โหลดจาก cdn.jsdelivr.net เครื่องที่เปิดเว็บต้องต่ออินเทอร์เน็ต
+
+## พื้นหลัง 3D
+- เป็นฉากโรงจอดที่สร้างด้วยโค้ด (Three.js) ไม่ต้องมีไฟล์โมเดล
+- กล้องหมุนตามเมาส์ และตามการ scroll หน้า เมื่อเปลี่ยนเมนู กล้องจะหมุนไปมุมใหม่ (`PAGE_YAW` ใน showroom_scene.html)
+- อยากใช้โมเดลโชว์รูมของตัวเอง: วางไฟล์เป็น `static/showroom.glb` แล้ว Reboot แอป
+- ปิดได้จาก toggle "พื้นหลัง 3D" ใน sidebar (เผื่อเครื่องช้า/มือถือ)
 
 ## รัน
 ```

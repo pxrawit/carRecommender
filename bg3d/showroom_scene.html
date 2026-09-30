@@ -1,0 +1,229 @@
+<!doctype html>
+<!--
+  GraphCar — 3D background scene (Three.js)
+  - โรงจอด/โชว์รูมแบบ procedural (ไม่ต้องมีไฟล์) หรือโหลด showroom.glb ถ้ามี (__SHOWROOM_URL__)
+  - กล้องหมุนตามเมาส์ + การ scroll ของหน้า และหมุนไปมุมใหม่เมื่อเปลี่ยนหน้า (#gc-page[data-page])
+  ไฟล์นี้ถูกฝังผ่าน st.iframe ซึ่งเป็น same-origin จึงอ่าน event ของหน้า Streamlit (window.parent) ได้
+-->
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #070a10; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+<script type="importmap">
+  { "imports": {
+      "three": "__THREE__/build/three.module.js",
+      "three/addons/": "__THREE__/examples/jsm/"
+  } }
+</script>
+</head>
+<body>
+<script type="module">
+import * as THREE from "three";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+const SHOWROOM_URL = "__SHOWROOM_URL__";
+const P = window.parent;              // หน้า Streamlit (same-origin)
+const PD = P.document;
+P.__gcSceneLoads = (P.__gcSceneLoads || 0) + 1;   // ใช้ตรวจว่าฉากไม่ถูกโหลดซ้ำตอนเปลี่ยนหน้า
+
+// ---------- renderer / scene ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070a10);
+scene.fog = new THREE.Fog(0x070a10, 20, 72);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.35;
+
+const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 200);
+
+// ---------- canvas textures ----------
+function canvasTex(w, h, draw, repeat = [1, 1]) {
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  draw(c.getContext("2d"), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+function noise(ctx, w, h, base, amp, n = 9000) {
+  ctx.fillStyle = base; ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < n; i++) {
+    const v = Math.random() * amp;
+    ctx.fillStyle = `rgba(${Math.random() < .5 ? "255,255,255" : "0,0,0"},${v})`;
+    ctx.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 3, 1 + Math.random() * 3);
+  }
+}
+// พื้นเหล็กลายกันลื่น (diamond plate)
+const plate = canvasTex(256, 256, (ctx, w, h) => {
+  noise(ctx, w, h, "#3a3f4a", 0.05, 3000);
+  for (let y = 0; y < h; y += 32) for (let x = 0; x < w; x += 32) {
+    const ox = (y / 32) % 2 ? 16 : 0, cx = x + ox + 8, cy = y + 8;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(((y / 32) % 2 ? 1 : -1) * Math.PI / 4);
+    const g = ctx.createLinearGradient(-9, -2, 9, 2);
+    g.addColorStop(0, "#6b7280"); g.addColorStop(1, "#262a32");
+    ctx.fillStyle = g; ctx.fillRect(-9, -2.2, 18, 4.4); ctx.restore();
+  }
+}, [40, 40]);
+const concrete = canvasTex(256, 256, (ctx, w, h) => noise(ctx, w, h, "#2b3140", 0.09, 14000), [1, 2]);
+const ceilingTex = canvasTex(256, 256, (ctx, w, h) => noise(ctx, w, h, "#222733", 0.08, 12000), [20, 20]);
+
+// ---------- materials ----------
+const M = {
+  floor: new THREE.MeshStandardMaterial({ map: plate, bumpMap: plate, bumpScale: 0.6, metalness: 0.75, roughness: 0.38 }),
+  concrete: new THREE.MeshStandardMaterial({ map: concrete, roughness: 0.85, metalness: 0.1 }),
+  ceiling: new THREE.MeshStandardMaterial({ map: ceilingTex, roughness: 0.95 }),
+  beam: new THREE.MeshStandardMaterial({ color: 0x1c212c, roughness: 0.8, metalness: 0.2 }),
+  lamp: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xdfe9ff, emissiveIntensity: 2.2 }),
+  window: new THREE.MeshStandardMaterial({ color: 0x9fb4c9, emissive: 0x9fb4c9, emissiveIntensity: 0.9 }),
+  grille: new THREE.MeshStandardMaterial({ color: 0x9aa3b2, metalness: 0.9, roughness: 0.4, wireframe: true }),
+  kiosk: new THREE.MeshStandardMaterial({ color: 0x14171d, roughness: 0.6, metalness: 0.3 }),
+};
+
+const hall = new THREE.Group(); scene.add(hall);
+const add = (geo, mat, x, y, z, parent = hall) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parent.add(m); return m; };
+
+// ---------- procedural showroom ----------
+function buildProcedural() {
+  const S = 80, H = 6.5;
+  add(new THREE.PlaneGeometry(S, S), M.floor, 0, 0, 0).rotation.x = -Math.PI / 2;
+  add(new THREE.PlaneGeometry(S, S), M.ceiling, 0, H, 0).rotation.x = Math.PI / 2;
+
+  // เสาและคาน (grid ทุก 10 เมตร)
+  const beamGeoX = new THREE.BoxGeometry(S, 0.6, 0.7), beamGeoZ = new THREE.BoxGeometry(0.7, 0.6, S);
+  for (let k = -35; k <= 35; k += 10) {
+    add(beamGeoX, M.beam, 0, H - 0.3, k);
+    add(beamGeoZ, M.beam, k, H - 0.3, 0);
+  }
+  const pillarGeo = new THREE.BoxGeometry(0.9, H, 0.9);
+  for (let x = -35; x <= 35; x += 10) for (let z = -35; z <= 35; z += 10) add(pillarGeo, M.concrete, x, H / 2, z);
+
+  // โคมไฟเพดาน + point light บางดวง
+  const lampGeo = new THREE.PlaneGeometry(2.2, 2.2);
+  for (let x = -30; x <= 30; x += 10) for (let z = -30; z <= 30; z += 10) {
+    const l = add(lampGeo, M.lamp, x, H - 0.02, z); l.rotation.x = Math.PI / 2;
+    if (Math.abs(x) <= 20 && Math.abs(z) <= 20 && (x + z) % 20 === 0) {
+      const pl = new THREE.PointLight(0xdfe9ff, 40, 22, 1.6); pl.position.set(x, H - 0.4, z); hall.add(pl);
+    }
+  }
+
+  // ผนัง + หน้าต่าง + ตะแกรง
+  const wallGeo = new THREE.PlaneGeometry(S, H), winGeo = new THREE.PlaneGeometry(1.2, 1.6), grilleGeo = new THREE.PlaneGeometry(6, 3.2, 14, 8);
+  [[0, -S / 2, 0], [0, S / 2, Math.PI], [-S / 2, 0, Math.PI / 2], [S / 2, 0, -Math.PI / 2]].forEach(([x, z, r]) => {
+    const w = add(wallGeo, M.concrete, x, H / 2, z); w.rotation.y = r;
+    for (let i = -35; i <= 35; i += 5) {
+      const off = new THREE.Vector3(i, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), r);
+      const inward = new THREE.Vector3(0, 0, 0.05).applyAxisAngle(new THREE.Vector3(0, 1, 0), r);
+      const g = i % 10 === 0 ? grilleGeo : winGeo, m = i % 10 === 0 ? M.grille : M.window;
+      const p = add(g, m, x + off.x + inward.x, i % 10 === 0 ? 2.6 : 3.2, z + off.z + inward.z); p.rotation.y = r;
+    }
+  });
+
+  // คีออสก์กลางห้อง พร้อมจอ GraphCar
+  const kiosk = new THREE.Group(); hall.add(kiosk);
+  add(new THREE.BoxGeometry(5.2, 3.4, 5.2), M.kiosk, 0, 1.7, 0, kiosk);
+  add(new THREE.BoxGeometry(5.8, 0.9, 5.8), M.beam, 0, 3.85, 0, kiosk);
+  const screenTex = canvasTex(1024, 1024, (ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, w, h); g.addColorStop(0, "#0ea5e9"); g.addColorStop(1, "#1e3a8a");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(255,255,255,.18)"; ctx.lineWidth = 3;
+    const nodes = [[260, 640], [470, 520], [700, 660], [560, 800], [340, 820], [790, 470]];
+    [[0, 1], [1, 2], [1, 3], [3, 4], [2, 5], [0, 4], [2, 3]].forEach(([a, b]) => {
+      ctx.beginPath(); ctx.moveTo(...nodes[a]); ctx.lineTo(...nodes[b]); ctx.stroke();
+    });
+    nodes.forEach(([x, y], i) => { ctx.fillStyle = i % 2 ? "#fde68a" : "#bae6fd"; ctx.beginPath(); ctx.arc(x, y, 22, 0, 7); ctx.fill(); });
+    ctx.fillStyle = "#fff"; ctx.font = "bold 120px sans-serif"; ctx.fillText("GraphCar", 90, 230);
+    ctx.font = "44px sans-serif"; ctx.fillStyle = "rgba(255,255,255,.85)";
+    ctx.fillText("Neo4j · Graph Recommendation", 96, 310);
+  });
+  screenTex.repeat.set(1, 1);
+  const screenMat = new THREE.MeshStandardMaterial({ map: screenTex, emissive: 0xffffff, emissiveMap: screenTex, emissiveIntensity: 0.9 });
+  for (let i = 0; i < 4; i++) {
+    const a = (i * Math.PI) / 2, s = add(new THREE.PlaneGeometry(3.6, 2.6), screenMat, Math.sin(a) * 2.61, 1.9, Math.cos(a) * 2.61, kiosk);
+    s.rotation.y = a;
+  }
+  const spot = new THREE.SpotLight(0x9bd6ff, 60, 20, 0.7, 0.6, 1.2); spot.position.set(0, 6, 8); spot.target = kiosk; hall.add(spot);
+}
+
+scene.add(new THREE.HemisphereLight(0x8fa3c0, 0x0b0e14, 0.35));
+
+let orbit = { radius: 11.5, height: 1.9, center: new THREE.Vector3(0, 1.8, 0), side: 5 };
+if (SHOWROOM_URL) {
+  new GLTFLoader().load(SHOWROOM_URL, (gltf) => {
+    const root = gltf.scene, box = new THREE.Box3().setFromObject(root), size = box.getSize(new THREE.Vector3());
+    const c = box.getCenter(new THREE.Vector3());
+    root.position.sub(new THREE.Vector3(c.x, box.min.y, c.z));   // วางกลางห้อง พื้นที่ y=0
+    hall.add(root);
+    const span = Math.max(size.x, size.z);
+    orbit = { radius: Math.min(span * 0.3, 20), height: Math.min(size.y * 0.35, 2.2), center: new THREE.Vector3(0, Math.min(size.y * 0.3, 1.8), 0), side: Math.min(span * 0.08, 5) };
+    scene.fog.near = span * 0.4; scene.fog.far = span * 1.2;
+  }, undefined, () => buildProcedural());
+} else {
+  buildProcedural();
+}
+
+// ---------- camera control: page / mouse / scroll ----------
+const PAGE_YAW = [0, 50, -50, 100, -100, 150, -150, 200];   // องศาต่อหน้าเมนู
+let page = 0, yaw = 0, targetYaw = 0, mx = 0, my = 0, sx = 0, sy = 0, scrollYaw = 0;
+
+function readPage() {
+  const el = PD.getElementById("gc-page");
+  const p = el ? parseInt(el.dataset.page || "0", 10) : 0;
+  if (p !== page) { page = p; targetYaw = PAGE_YAW[p % PAGE_YAW.length]; }
+}
+PD.addEventListener("mousemove", (e) => {
+  mx = (e.clientX / P.innerWidth) * 2 - 1;
+  my = (e.clientY / P.innerHeight) * 2 - 1;
+});
+PD.addEventListener("scroll", (e) => {
+  const t = e.target; if (!t || t.scrollTop === undefined) return;
+  const max = Math.max(1, t.scrollHeight - t.clientHeight);
+  scrollYaw = (t.scrollTop / max) * 35;                         // เลื่อนลงสุด = หมุนเพิ่ม 35°
+}, true);
+setInterval(readPage, 250); readPage(); yaw = targetYaw;
+
+function onResize() {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", onResize);
+
+const clock = new THREE.Clock();
+function tick() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const k = 1 - Math.pow(0.02, dt);                             // smoothing
+  sx += (mx - sx) * k; sy += (my - sy) * k;
+  const goal = targetYaw + scrollYaw + sx * 14;
+  yaw += (goal - yaw) * k * 0.9;
+  const a = THREE.MathUtils.degToRad(yaw);
+  camera.position.set(
+    orbit.center.x + Math.sin(a) * orbit.radius,
+    orbit.height - sy * 0.5,
+    orbit.center.z + Math.cos(a) * orbit.radius
+  );
+  // มองเยื้องไปทางซ้ายของจุดกลาง เพื่อให้คีออสก์อยู่ฝั่งขวาของจอ ไม่ทับหัวข้อ
+  const right = new THREE.Vector3(Math.cos(a), 0, -Math.sin(a));
+  camera.lookAt(
+    orbit.center.x - right.x * (orbit.side + sx * 1.5),
+    orbit.center.y + 0.6 - sy * 0.6,
+    orbit.center.z - right.z * (orbit.side + sx * 1.5)
+  );
+  renderer.render(scene, camera);
+  if (!document.hidden) requestAnimationFrame(tick);
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { clock.getDelta(); tick(); } });
+tick();
+</script>
+</body>
+</html>
