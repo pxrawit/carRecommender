@@ -172,7 +172,14 @@ st.html(
       }
       [data-testid="stMetricValue"] { font-family: 'Prompt', sans-serif; }
       [data-testid="stExpander"], [data-testid="stForm"] { background: var(--glass-2); border-radius: 16px; }
-      [data-testid="stImage"] img { border-radius: 14px; }
+      /* กรอบรูปรถขนาดเท่ากันทุกใบ (16:10) รูปไม่ถูกครอบตัด ส่วนที่เหลือเติมพื้นขาว */
+      [data-testid="stImage"], [data-testid="stImageContainer"] { width: 100% !important; }
+      [data-testid="stImage"] img, [data-testid="stImageContainer"] img {
+        width: 100% !important; height: auto !important; max-height: none !important;
+        aspect-ratio: 16 / 10; object-fit: contain; object-position: center;
+        background: #ffffff; padding: 6px; box-sizing: border-box;
+        border-radius: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.25);
+      }
       .stTabs [data-baseweb="tab-list"] { gap: .3rem; }
       .stTabs [data-baseweb="tab"] { border-radius: 10px 10px 0 0; padding: .4rem .9rem; }
 
