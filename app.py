@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import html
 from datetime import date
 from pathlib import Path
@@ -363,36 +364,151 @@ def df(rows: list[dict], columns: list[str] | None = None) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns)
 
 
-def draw_graph(rows: list[dict], focus: str | None = None) -> None:
-    dot = [
-        "digraph G {",
-        'rankdir="LR";',
-        'bgcolor="transparent";',
-        'node [style="rounded,filled", fontname="Helvetica", color="#0f172a"];',
-        'edge [fontname="Helvetica", fontsize=10];',
-    ]
-    seen: set[str] = set()
+VIS_NETWORK_JS = "https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"
+
+
+def draw_graph(rows: list[dict], focus: str | None = None, height: int = 620) -> None:
+    """กราฟแบบโต้ตอบในกรอบสี่เหลี่ยม: scroll = ซูม, ลาก = เลื่อน, คลิก node = ไฮไลต์เพื่อนบ้าน"""
+    degree: dict[str, int] = {}
     for r in rows:
-        for node_id, label, is_user in [(f"U:{r['user']}", r["user"], True), (f"C:{r['car']}", r["car"], False)]:
-            if node_id in seen:
-                continue
-            seen.add(node_id)
-            safe = str(label).replace('"', "'")
-            if is_user:
-                color = "#fde68a" if label == focus else "#bae6fd"
-                dot.append(f'"{node_id}" [label="{safe}", shape=ellipse, fillcolor="{color}"];')
-            else:
-                dot.append(f'"{node_id}" [label="{safe}", shape=box, fillcolor="#fed7aa"];')
+        for k in (f"U:{r['user']}", f"C:{r['car']}"):
+            degree[k] = degree.get(k, 0) + 1
+
+    nodes: dict[str, dict] = {}
+    edges: list[dict] = []
+    for r in rows:
+        u, c = f"U:{r['user']}", f"C:{r['car']}"
+        nodes.setdefault(u, {
+            "id": u, "label": r["user"], "group": "focus" if r["user"] == focus else "user",
+            "value": degree[u], "title": f"User: {r['user']} · {degree[u]} เส้น",
+        })
+        nodes.setdefault(c, {
+            "id": c, "label": r["car"], "group": "car", "title": f"Car: {r['car']} · {degree[c]} เส้น",
+        })
         if r["rel"] == "TEST_DROVE":
-            date_label = r.get("test_date") or ""
-            dot.append(
-                f'"U:{r["user"]}" -> "C:{r["car"]}" '
-                f'[label="TEST_DROVE\\n{date_label}", style=dashed, color="#f87171", fontcolor="#fca5a5"];'
-            )
+            d = r.get("test_date") or ""
+            edges.append({
+                "from": u, "to": c, "label": d, "dashes": True, "rel": "TEST_DROVE",
+                "title": f"{r['user']} ลองขับ {r['car']} {d}",
+                "color": {"color": "#f87171", "highlight": "#fecaca", "hover": "#fca5a5"},
+            })
         else:
-            dot.append(f'"U:{r["user"]}" -> "C:{r["car"]}" [label="LIKES", color="#94a3b8", fontcolor="#cbd5e1"];')
-    dot.append("}")
-    st.graphviz_chart("\n".join(dot), width="stretch")
+            edges.append({
+                "from": u, "to": c, "rel": "LIKES", "title": f"{r['user']} ชอบ {r['car']}",
+                "color": {"color": "rgba(148,163,184,.55)", "highlight": "#7dd3fc", "hover": "#bae6fd"},
+            })
+
+    # ป้องกัน "</script>" ในชื่อจาก database หลุดออกจากแท็ก script
+    data = json.dumps({"nodes": list(nodes.values()), "edges": edges}, ensure_ascii=False).replace("</", "<\\/")
+
+    st.iframe(
+        f"""
+        <script src="{VIS_NETWORK_JS}"></script>
+        <style>
+          html, body {{ margin: 0; background: transparent; font-family: 'IBM Plex Sans Thai', system-ui, sans-serif; }}
+          #wrap {{
+            position: relative; height: {height}px; border-radius: 18px; overflow: hidden;
+            background: radial-gradient(circle at 50% 40%, #142036 0%, #0a1020 60%, #060910 100%);
+            border: 1px solid rgba(148,163,184,.18);
+          }}
+          #net {{ position: absolute; inset: 0; }}
+          .bar {{ position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 5; }}
+          .bar button {{
+            background: rgba(15,23,42,.82); color: #e2e8f0; border: 1px solid rgba(148,163,184,.28);
+            border-radius: 10px; padding: 6px 11px; font-size: 13px; cursor: pointer; font-family: inherit;
+          }}
+          .bar button:hover {{ border-color: #38bdf8; color: #fff; }}
+          .hint, .legend {{
+            position: absolute; left: 12px; z-index: 5; font-size: 12px; color: #94a3b8;
+            background: rgba(15,23,42,.72); border: 1px solid rgba(148,163,184,.18);
+            border-radius: 10px; padding: 6px 10px; pointer-events: none;
+          }}
+          .hint {{ top: 12px; }}
+          .legend {{ bottom: 12px; display: flex; gap: 14px; align-items: center; }}
+          .dot {{ display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }}
+          .box {{ display: inline-block; width: 14px; height: 10px; border-radius: 3px; margin-right: 5px; background: #fb923c; vertical-align: -1px; }}
+          .ln {{ display: inline-block; width: 22px; border-top: 2px solid #94a3b8; margin-right: 5px; vertical-align: 3px; }}
+          .ln.dash {{ border-top: 2px dashed #f87171; }}
+          div.vis-tooltip {{
+            background: #0f172a !important; color: #e2e8f0 !important; border: 1px solid #334155 !important;
+            border-radius: 8px !important; font-family: inherit !important; font-size: 12px !important; padding: 6px 9px !important;
+          }}
+        </style>
+        <div id="wrap">
+          <div id="net"></div>
+          <div class="hint">🖱️ scroll = ซูม · ลาก = เลื่อน · คลิก node = ไฮไลต์</div>
+          <div class="bar">
+            <button id="zin" title="ซูมเข้า">＋</button>
+            <button id="zout" title="ซูมออก">－</button>
+            <button id="fit" title="แสดงทั้งหมด">⤢ พอดีกรอบ</button>
+            <button id="phys" title="จัดวางใหม่">✨ จัดวางใหม่</button>
+          </div>
+          <div class="legend">
+            <span><span class="dot" style="background:#38bdf8"></span>User</span>
+            <span><span class="dot" style="background:#fbbf24"></span>User ที่เลือก</span>
+            <span><span class="box"></span>Car</span>
+            <span><span class="ln"></span>LIKES</span>
+            <span><span class="ln dash"></span>TEST_DROVE</span>
+          </div>
+        </div>
+        <script>
+          const data = {data};
+          const nodes = new vis.DataSet(data.nodes), edges = new vis.DataSet(data.edges);
+          const network = new vis.Network(document.getElementById("net"), {{ nodes, edges }}, {{
+            autoResize: true,
+            nodes: {{
+              font: {{ color: "#e2e8f0", size: 14, strokeWidth: 4, strokeColor: "#0a1020" }},
+              borderWidth: 2, scaling: {{ min: 10, max: 26 }},
+            }},
+            groups: {{
+              user:  {{ shape: "dot", color: {{ background: "#38bdf8", border: "#bae6fd", highlight: {{ background: "#7dd3fc", border: "#fff" }}, hover: {{ background: "#7dd3fc", border: "#fff" }} }} }},
+              focus: {{ shape: "dot", color: {{ background: "#fbbf24", border: "#fde68a", highlight: {{ background: "#fcd34d", border: "#fff" }}, hover: {{ background: "#fcd34d", border: "#fff" }} }} }},
+              car:   {{ shape: "box", margin: 9, shapeProperties: {{ borderRadius: 8 }},
+                       font: {{ color: "#1c1003", strokeWidth: 0, size: 13 }},
+                       color: {{ background: "#fb923c", border: "#fdba74", highlight: {{ background: "#fdba74", border: "#fff" }}, hover: {{ background: "#fdba74", border: "#fff" }} }} }},
+            }},
+            edges: {{
+              arrows: {{ to: {{ enabled: true, scaleFactor: 0.55 }} }},
+              width: 1.6, selectionWidth: 1.5, hoverWidth: 0.8,
+              smooth: {{ type: "dynamic" }},
+              font: {{ size: 10, color: "#fca5a5", strokeWidth: 0, align: "middle" }},
+            }},
+            physics: {{
+              solver: "forceAtlas2Based",
+              forceAtlas2Based: {{ gravitationalConstant: -70, springLength: 130, springConstant: 0.05, avoidOverlap: 0.4 }},
+              stabilization: {{ iterations: 300 }},
+            }},
+            interaction: {{ hover: true, tooltipDelay: 120, zoomSpeed: 0.7, keyboard: true }},
+          }});
+
+          const freeze = () => network.setOptions({{ physics: false }});
+          network.once("stabilizationIterationsDone", () => {{ freeze(); network.fit({{ animation: {{ duration: 500 }} }}); }});
+
+          const zoom = (f) => network.moveTo({{ scale: network.getScale() * f, animation: {{ duration: 250 }} }});
+          document.getElementById("zin").onclick = () => zoom(1.3);
+          document.getElementById("zout").onclick = () => zoom(1 / 1.3);
+          document.getElementById("fit").onclick = () => network.fit({{ animation: {{ duration: 400 }} }});
+          document.getElementById("phys").onclick = () => {{
+            network.setOptions({{ physics: true }}); network.stabilize(200);
+            network.once("stabilized", () => {{ freeze(); network.fit({{ animation: {{ duration: 400 }} }}); }});
+          }};
+
+          // คลิก node: ไฮไลต์ node ที่เชื่อมกัน ที่เหลือจางลง
+          const reset = () => {{
+            nodes.update(nodes.getIds().map(id => ({{ id, opacity: 1 }})));
+            edges.update(edges.get().map(e => ({{ id: e.id, hidden: false }})));
+          }};
+          network.on("selectNode", (p) => {{
+            const id = p.nodes[0], keep = new Set([id, ...network.getConnectedNodes(id)]);
+            const keepEdges = new Set(network.getConnectedEdges(id));
+            nodes.update(nodes.getIds().map(n => ({{ id: n, opacity: keep.has(n) ? 1 : 0.15 }})));
+            edges.update(edges.get().map(e => ({{ id: e.id, hidden: !keepEdges.has(e.id) }})));
+          }});
+          network.on("deselectNode", reset);
+        </script>
+        """,
+        height=height + 4,
+    )
 
 
 # ---------------------------------------------------------------------
@@ -807,7 +923,6 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
 
         focus = None if choice == "(ทั้งหมด)" else choice
         rows = graph_edges(focus, show_similar)
-        st.caption("🟦 User  ·  🟧 Car  ·  เส้นทึบ = LIKES  ·  เส้นประสีแดง = TEST_DROVE")
         if not rows:
             st.info("ยังไม่มีข้อมูลความสัมพันธ์")
         else:
