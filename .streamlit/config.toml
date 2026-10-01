@@ -1,9 +1,10 @@
 [theme]
-base = "dark"
-primaryColor = "#38bdf8"
-backgroundColor = "#070a10"
-secondaryBackgroundColor = "#111827"
-textColor = "#e5e7eb"
+base = "light"
+primaryColor = "#111111"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f6f6f7"
+textColor = "#111111"
+borderColor = "#e5e7eb"
 
 [server]
 # ให้ไฟล์ในโฟลเดอร์ static/ เปิดได้ที่ /app/static/... (ใช้กับ static/showroom.glb)

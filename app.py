@@ -9,7 +9,6 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from background3d import render_background
 from neo4j_service import (
     add_car,
     add_like,
@@ -57,145 +56,101 @@ st.set_page_config(
 st.html(
     """
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=Prompt:wght@500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600&family=Inter:wght@400;500;600;700&display=swap');
       :root {
-        --glass: rgba(9, 13, 21, .66);
-        --glass-2: rgba(255, 255, 255, .045);
-        --line: rgba(148, 163, 184, .18);
-        --accent: #38bdf8;
-        --accent-2: #fbbf24;
-        --muted: #94a3b8;
+        --ink: #111111;        /* ตัวหนังสือหลัก */
+        --ink-2: #4b5563;      /* ตัวหนังสือรอง */
+        --muted: #8a8f98;
+        --line: #e5e7eb;       /* เส้นขอบบาง */
+        --soft: #f6f6f7;       /* พื้นเทาอ่อนมาก */
+        --accent: #111111;     /* สีเน้นใช้ดำ แบบเว็บโชว์รูม */
       }
       html, body, .stApp, .stMarkdown, p, li, label, input, textarea, button, [data-testid="stWidgetLabel"] {
-        font-family: 'IBM Plex Sans Thai', system-ui, sans-serif;
+        font-family: 'Inter', 'IBM Plex Sans Thai', system-ui, sans-serif;
+        color: var(--ink);
       }
-      h1, h2, h3, h4, .hero-title { font-family: 'Prompt', 'IBM Plex Sans Thai', sans-serif !important; letter-spacing: .2px; }
+      h1, h2, h3, h4 { font-family: 'Inter', 'IBM Plex Sans Thai', sans-serif !important; font-weight: 600 !important; letter-spacing: -.01em; color: var(--ink); }
+      .stApp { background: #ffffff; }
 
-      /* ให้ฉาก 3D ด้านหลังมองเห็นได้ */
-      .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stBottom"] { background: transparent !important; }
-      [data-testid="stHeader"] { background: transparent !important; }
-      .block-container { max-width: 1200px; padding-top: 2.2rem; padding-bottom: 4rem; }
-
-      /* ซ่อน sidebar และ header เดิม ใช้แถบเมนูด้านบนแทน */
+      /* ซ่อน sidebar / header เดิม ใช้แถบเมนูด้านบนแทน */
       [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"],
       [data-testid="stHeader"] { display: none !important; }
-      .block-container { padding-top: 6.2rem !important; }
+      .block-container { max-width: 1200px; padding-top: 5.2rem !important; padding-bottom: 4rem; }
 
-      /* ---------- แถบเมนูด้านบน ---------- */
+      /* ---------- แถบเมนูด้านบน: ขาว เรียบ เส้นใต้บาง ---------- */
       .st-key-gc_nav {
-        position: fixed !important; top: 14px; left: 50%; transform: translateX(-50%);
-        width: min(1240px, calc(100vw - 28px)) !important; z-index: 1000;
-        padding: .5rem .6rem .5rem 1.1rem !important; flex-wrap: nowrap !important;
-        background: rgba(8, 11, 18, .72); backdrop-filter: blur(18px) saturate(1.35);
-        border: 1px solid var(--line); border-radius: 20px;
-        box-shadow: 0 14px 44px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255,255,255,.05);
+        position: fixed !important; top: 0; left: 0; right: 0; width: 100vw !important; z-index: 1000;
+        padding: .55rem max(1.2rem, calc((100vw - 1200px) / 2 + 1rem)) !important; flex-wrap: nowrap !important;
+        background: rgba(255, 255, 255, .96); backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--line);
         overflow-x: auto; scrollbar-width: none;
       }
       .st-key-gc_nav::-webkit-scrollbar { display: none; }
       .st-key-gc_nav > div { flex: 0 0 auto; width: auto !important; }
-      .st-key-gc_nav > div:has(.stButtonGroup), .st-key-gc_nav > div:has([data-testid="stButtonGroup"]) { flex: 1 1 auto; display: flex; justify-content: center; }
+      .st-key-gc_nav > div:has([data-testid="stButtonGroup"]) { flex: 1 1 auto; display: flex; justify-content: flex-end; min-width: 0; }
       .gc-brand {
-        font-family: 'Prompt', sans-serif; font-weight: 700; font-size: 1.2rem; color: #f8fafc;
-        white-space: nowrap; letter-spacing: .3px; padding-right: .4rem;
+        font-weight: 700; font-size: 1.05rem; color: var(--ink); white-space: nowrap;
+        letter-spacing: .14em; text-transform: uppercase;
       }
-      .gc-brand span { background: linear-gradient(90deg, #7dd3fc, #fbbf24); -webkit-background-clip: text; background-clip: text; color: transparent; }
-      .st-key-gc_nav [data-testid="stButtonGroup"] { gap: .25rem !important; flex-wrap: nowrap !important; }
+      .gc-brand span { font-weight: 400; color: var(--ink-2); }
+      .st-key-gc_nav [data-testid="stButtonGroup"] { gap: .1rem !important; flex-wrap: nowrap !important; width: max-content; }
       .st-key-gc_nav [data-testid="stButtonGroup"] button {
-        background: transparent !important; border: 1px solid transparent !important;
-        border-radius: 999px !important; padding: .38rem .95rem !important; min-height: 0 !important;
-        color: #cbd5e1 !important; white-space: nowrap; transition: background .2s, color .2s, border-color .2s;
+        background: transparent !important; border: 0 !important; border-radius: 0 !important;
+        border-bottom: 2px solid transparent !important; box-shadow: none !important;
+        padding: .45rem .8rem !important; min-height: 0 !important;
+        color: var(--ink-2) !important; white-space: nowrap; font-size: .92rem; transition: color .15s, border-color .15s;
       }
-      .st-key-gc_nav [data-testid="stButtonGroup"] button:hover {
-        background: rgba(56, 189, 248, .10) !important; color: #f8fafc !important;
-      }
+      .st-key-gc_nav [data-testid="stButtonGroup"] button p { color: inherit !important; }
+      .st-key-gc_nav [data-testid="stButtonGroup"] button:hover { color: var(--ink) !important; }
       .st-key-gc_nav [data-testid="stButtonGroup"] button[aria-checked="true"],
       .st-key-gc_nav [data-testid="stButtonGroup"] button[data-selected="true"] {
-        background: linear-gradient(135deg, rgba(56,189,248,.28), rgba(56,189,248,.10)) !important;
-        border-color: rgba(56, 189, 248, .45) !important; color: #f0f9ff !important;
-        box-shadow: 0 0 18px rgba(56, 189, 248, .25);
+        color: var(--ink) !important; border-bottom-color: var(--ink) !important; font-weight: 600;
       }
-      .st-key-gc_nav > div:has([data-testid="stButtonGroup"]) { min-width: 0; }
-      .st-key-gc_nav [data-testid="stButtonGroup"] { width: max-content; }
-
-      /* มือถือ/จอแคบ: โลโก้ + สวิตช์อยู่แถวบน เมนูเลื่อนซ้าย-ขวาแถวล่าง */
       @media (max-width: 900px) {
-        .st-key-gc_nav { flex-wrap: wrap !important; row-gap: .35rem !important; overflow: visible; padding: .55rem .7rem !important; }
-        .st-key-gc_nav > div:has(.gc-brand) { order: 1; flex: 1 1 auto; }
-        .st-key-gc_nav > div:has([data-testid="stCheckbox"]), .st-key-gc_nav > div:has([data-testid="stToggle"]) { order: 2; }
+        .st-key-gc_nav { flex-wrap: wrap !important; row-gap: .2rem !important; }
         .st-key-gc_nav > div:has([data-testid="stButtonGroup"]) {
-          order: 3; flex: 1 1 100% !important; width: 100% !important; justify-content: flex-start !important;
-          overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+          flex: 1 1 100% !important; width: 100% !important; justify-content: flex-start !important;
+          overflow-x: auto; scrollbar-width: none;
         }
-        .st-key-gc_nav > div:has([data-testid="stButtonGroup"])::-webkit-scrollbar { display: none; }
-        .block-container { padding-top: 8.4rem !important; }
-        .st-key-gc_panel { padding: 1.1rem 1rem 1.4rem; border-radius: 20px; }
-      }
-      .st-key-gc_nav [data-testid="stCheckbox"] label p, .st-key-gc_nav [data-testid="stToggle"] label p { color: #94a3b8; font-size: .85rem; }
-
-      /* sidebar แบบกระจกฝ้า (ไม่ได้ใช้แล้ว เก็บไว้เผื่อเปิดกลับ) */
-      [data-testid="stSidebar"] {
-        background: rgba(7, 10, 16, .74) !important; backdrop-filter: blur(16px);
-        border-right: 1px solid var(--line);
-      }
-      [data-testid="stSidebar"] [role="radiogroup"] label {
-        padding: .45rem .7rem; border-radius: 12px; margin-bottom: .15rem; transition: background .2s;
-      }
-      [data-testid="stSidebar"] [role="radiogroup"] label:hover { background: rgba(56, 189, 248, .10); }
-      [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
-        background: linear-gradient(90deg, rgba(56,189,248,.22), rgba(56,189,248,.04));
-        box-shadow: inset 3px 0 0 var(--accent);
+        .block-container { padding-top: 7rem !important; }
       }
 
-      /* hero โปร่ง ให้เห็นฉากด้านหลัง */
-      .hero { padding: 3.2rem .4rem 2.2rem; color: #f8fafc; text-shadow: 0 2px 18px rgba(0,0,0,.65); }
-      .hero .eyebrow { color: var(--accent); font-weight: 600; letter-spacing: .18em; font-size: .78rem; text-transform: uppercase; }
-      .hero-title { font-size: clamp(2rem, 4.2vw, 3.3rem); font-weight: 700; margin: .35rem 0 .5rem; line-height: 1.1; }
-      .hero-title span {
-        background: linear-gradient(90deg, #7dd3fc, #fbbf24); -webkit-background-clip: text; background-clip: text; color: transparent;
-      }
-      .hero p { color: #cbd5e1; max-width: 640px; margin: 0; }
-      .chips { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: 1rem; }
-      .chip {
-        font-family: ui-monospace, monospace; font-size: .78rem; color: #e2e8f0;
-        padding: .28rem .65rem; border-radius: 999px; background: rgba(15, 23, 42, .6);
-        border: 1px solid var(--line); backdrop-filter: blur(6px);
-      }
+      /* ---------- hero ---------- */
+      .hero { padding: 1.2rem 0 1.6rem; border-bottom: 1px solid var(--line); margin-bottom: 1.6rem; }
+      .hero .eyebrow { color: var(--muted); font-weight: 500; letter-spacing: .2em; font-size: .74rem; text-transform: uppercase; }
+      .hero-title { font-size: clamp(2rem, 4vw, 3rem); font-weight: 600; margin: .4rem 0 .6rem; line-height: 1.1; letter-spacing: -.02em; color: var(--ink); }
+      .hero p { color: var(--ink-2); max-width: 620px; margin: 0; font-weight: 300; font-size: 1.05rem; }
 
-      /* แผงเนื้อหาหลัก */
-      .st-key-gc_panel {
-        background: var(--glass); backdrop-filter: blur(14px) saturate(1.2);
-        border: 1px solid var(--line); border-radius: 26px;
-        padding: 1.6rem 1.8rem 2rem; box-shadow: 0 30px 80px rgba(0,0,0,.45);
+      /* ---------- ส่วนประกอบทั่วไป ---------- */
+      [data-testid="stMetric"] { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 1rem 1.2rem; }
+      [data-testid="stMetricLabel"] p { color: var(--muted) !important; text-transform: uppercase; letter-spacing: .08em; font-size: .75rem !important; }
+      [data-testid="stMetricValue"] { font-weight: 600; }
+      [data-testid="stExpander"] details, [data-testid="stForm"] { border: 1px solid var(--line) !important; border-radius: 4px !important; background: #fff; }
+      .stButton button, .stFormSubmitButton button, [data-testid="stBaseButton-primary"], [data-testid="stBaseButton-secondary"] {
+        border-radius: 2px !important; font-weight: 500; letter-spacing: .02em;
       }
-      [data-testid="stMetric"] {
-        background: var(--glass-2); border: 1px solid var(--line); border-radius: 18px; padding: .9rem 1.1rem;
-      }
-      [data-testid="stMetricValue"] { font-family: 'Prompt', sans-serif; }
-      [data-testid="stExpander"], [data-testid="stForm"] { background: var(--glass-2); border-radius: 16px; }
-      /* กรอบรูปรถขนาดเท่ากันทุกใบ (16:10) รูปไม่ถูกครอบตัด ส่วนที่เหลือเติมพื้นขาว */
+      .stTabs [data-baseweb="tab-list"] { gap: 1.2rem; border-bottom: 1px solid var(--line); }
+      .stTabs [data-baseweb="tab"] { padding: .5rem 0; background: transparent; }
+      hr { border-color: var(--line) !important; }
+
+      /* กรอบรูปรถขนาดเท่ากันทุกใบ (16:10) พื้นเทาอ่อน ไม่มีเงา */
       [data-testid="stImage"], [data-testid="stImageContainer"] { width: 100% !important; }
       [data-testid="stImage"] img, [data-testid="stImageContainer"] img {
         width: 100% !important; height: auto !important; max-height: none !important;
         aspect-ratio: 16 / 10; object-fit: contain; object-position: center;
-        background: #ffffff; padding: 6px; box-sizing: border-box;
-        border-radius: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.25);
+        background: #ffffff; padding: 0; box-sizing: border-box; border-radius: 0;
       }
-      .stTabs [data-baseweb="tab-list"] { gap: .3rem; }
-      .stTabs [data-baseweb="tab"] { border-radius: 10px 10px 0 0; padding: .4rem .9rem; }
 
-      .car-card {
-        padding: 1rem 1.2rem; border: 1px solid var(--line); border-radius: 18px;
-        margin-bottom: .75rem; background: var(--glass-2);
-      }
-      .car-card h3 { margin: .55rem 0 .2rem 0; }
+      .car-card { padding: .4rem 0 1rem; border-bottom: 1px solid var(--line); margin-bottom: .75rem; }
+      .car-card h3 { margin: .45rem 0 .15rem 0; font-size: 1.35rem; }
       .score-pill {
-        display: inline-block; padding: .22rem .65rem; border-radius: 999px;
-        background: linear-gradient(90deg, #0284c7, #38bdf8); color: white; font-size: .8rem; font-weight: 700;
+        display: inline-block; padding: .18rem .6rem; border: 1px solid var(--ink); border-radius: 2px;
+        color: var(--ink); font-size: .74rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
       }
       .muted { color: var(--muted); font-size: .9rem; }
       .no-img {
         aspect-ratio: 16/10; display: flex; align-items: center; justify-content: center;
-        border: 1px dashed var(--line); border-radius: 14px; color: var(--muted);
+        background: var(--soft); border-radius: 4px; color: var(--muted);
       }
     </style>
     """
@@ -363,14 +318,15 @@ def show_3d(model_path: str | None, image_path: str | None = None, height: int =
         <style>
           html, body {{ margin: 0; background: transparent; font-family: sans-serif; }}
           model-viewer {{
-            width: 100%; height: {height}px; border-radius: 18px;
-            background: radial-gradient(circle at 50% 30%, #1e293b 0%, #0b1220 65%, #05070c 100%);
-            --progress-bar-color: #0369a1;
+            width: 100%; height: {height}px; border-radius: 4px;
+            background: radial-gradient(circle at 50% 35%, #ffffff 0%, #f3f4f6 70%, #e9eaec 100%);
+            border: 1px solid #e5e7eb; box-sizing: border-box;
+            --progress-bar-color: #111;
           }}
           .hint {{
             position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
-            font-size: 12px; color: #cbd5e1; background: rgba(15,23,42,.7);
-            padding: 4px 10px; border-radius: 999px;
+            font-size: 12px; color: #4b5563; background: rgba(255,255,255,.9);
+            border: 1px solid #e5e7eb; padding: 4px 10px; border-radius: 2px;
           }}
         </style>
         <model-viewer src="{html.escape(src, quote=True)}" alt="{html.escape(alt, quote=True)}"
@@ -378,7 +334,7 @@ def show_3d(model_path: str | None, image_path: str | None = None, height: int =
             camera-orbit="35deg 72deg auto" shadow-intensity="1" shadow-softness="0.8"
             exposure="1.05" environment-image="neutral"
             interaction-prompt="none" touch-action="pan-y">
-          <div class="hint">🖱️ ลากเพื่อหมุน · scroll เพื่อซูม · คลิกขวาลากเพื่อเลื่อน</div>
+          <div class="hint">ลากเพื่อหมุน · scroll เพื่อซูม · คลิกขวาลากเพื่อเลื่อน</div>
         </model-viewer>
         """
     if hasattr(st, "iframe"):  # Streamlit รุ่นใหม่
@@ -456,12 +412,12 @@ def draw_graph(rows: list[dict], focus: str | None = None, height: int = 620) ->
             edges.append({
                 "from": u, "to": c, "label": d, "dashes": True, "rel": "TEST_DROVE",
                 "title": f"{r['user']} ลองขับ {r['car']} {d}",
-                "color": {"color": "#f87171", "highlight": "#fecaca", "hover": "#fca5a5"},
+                "color": {"color": "#c2410c", "highlight": "#9a3412", "hover": "#9a3412"},
             })
         else:
             edges.append({
                 "from": u, "to": c, "rel": "LIKES", "title": f"{r['user']} ชอบ {r['car']}",
-                "color": {"color": "rgba(148,163,184,.55)", "highlight": "#7dd3fc", "hover": "#bae6fd"},
+                "color": {"color": "#c7cbd1", "highlight": "#111111", "hover": "#4b5563"},
             })
 
     # ป้องกัน "</script>" ในชื่อจาก database หลุดออกจากแท็ก script
@@ -471,47 +427,46 @@ def draw_graph(rows: list[dict], focus: str | None = None, height: int = 620) ->
         f"""
         <script src="{VIS_NETWORK_JS}"></script>
         <style>
-          html, body {{ margin: 0; background: transparent; font-family: 'IBM Plex Sans Thai', system-ui, sans-serif; }}
+          html, body {{ margin: 0; background: #fff; font-family: 'Inter', 'IBM Plex Sans Thai', system-ui, sans-serif; }}
           #wrap {{
-            position: relative; height: {height}px; border-radius: 18px; overflow: hidden;
-            background: radial-gradient(circle at 50% 40%, #142036 0%, #0a1020 60%, #060910 100%);
-            border: 1px solid rgba(148,163,184,.18);
+            position: relative; height: {height}px; border-radius: 4px; overflow: hidden; box-sizing: border-box;
+            background: #fafafa; border: 1px solid #e5e7eb;
           }}
           #net {{ position: absolute; inset: 0; }}
           .bar {{ position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 5; }}
           .bar button {{
-            background: rgba(15,23,42,.82); color: #e2e8f0; border: 1px solid rgba(148,163,184,.28);
-            border-radius: 10px; padding: 6px 11px; font-size: 13px; cursor: pointer; font-family: inherit;
+            background: #fff; color: #111; border: 1px solid #d1d5db;
+            border-radius: 2px; padding: 6px 11px; font-size: 13px; cursor: pointer; font-family: inherit;
           }}
-          .bar button:hover {{ border-color: #38bdf8; color: #fff; }}
+          .bar button:hover {{ border-color: #111; }}
           .hint, .legend {{
-            position: absolute; left: 12px; z-index: 5; font-size: 12px; color: #94a3b8;
-            background: rgba(15,23,42,.72); border: 1px solid rgba(148,163,184,.18);
-            border-radius: 10px; padding: 6px 10px; pointer-events: none;
+            position: absolute; left: 12px; z-index: 5; font-size: 12px; color: #4b5563;
+            background: rgba(255,255,255,.92); border: 1px solid #e5e7eb;
+            border-radius: 2px; padding: 6px 10px; pointer-events: none;
           }}
           .hint {{ top: 12px; }}
           .legend {{ bottom: 12px; display: flex; gap: 14px; align-items: center; }}
           .dot {{ display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }}
-          .box {{ display: inline-block; width: 14px; height: 10px; border-radius: 3px; margin-right: 5px; background: #fb923c; vertical-align: -1px; }}
-          .ln {{ display: inline-block; width: 22px; border-top: 2px solid #94a3b8; margin-right: 5px; vertical-align: 3px; }}
-          .ln.dash {{ border-top: 2px dashed #f87171; }}
+          .box {{ display: inline-block; width: 14px; height: 10px; border-radius: 3px; margin-right: 5px; background: #fff; border: 1.5px solid #111; vertical-align: -1px; }}
+          .ln {{ display: inline-block; width: 22px; border-top: 2px solid #c7cbd1; margin-right: 5px; vertical-align: 3px; }}
+          .ln.dash {{ border-top: 2px dashed #c2410c; }}
           div.vis-tooltip {{
-            background: #0f172a !important; color: #e2e8f0 !important; border: 1px solid #334155 !important;
+            background: #fff !important; color: #111 !important; border: 1px solid #d1d5db !important;
             border-radius: 8px !important; font-family: inherit !important; font-size: 12px !important; padding: 6px 9px !important;
           }}
         </style>
         <div id="wrap">
           <div id="net"></div>
-          <div class="hint">🖱️ scroll = ซูม · ลาก = เลื่อน · คลิก node = ไฮไลต์</div>
+          <div class="hint">scroll = ซูม · ลาก = เลื่อน · คลิก node = ไฮไลต์</div>
           <div class="bar">
             <button id="zin" title="ซูมเข้า">＋</button>
             <button id="zout" title="ซูมออก">－</button>
-            <button id="fit" title="แสดงทั้งหมด">⤢ พอดีกรอบ</button>
-            <button id="phys" title="จัดวางใหม่">✨ จัดวางใหม่</button>
+            <button id="fit" title="แสดงทั้งหมด">พอดีกรอบ</button>
+            <button id="phys" title="จัดวางใหม่">จัดวางใหม่</button>
           </div>
           <div class="legend">
-            <span><span class="dot" style="background:#38bdf8"></span>User</span>
-            <span><span class="dot" style="background:#fbbf24"></span>User ที่เลือก</span>
+            <span><span class="dot" style="background:#9ca3af"></span>User</span>
+            <span><span class="dot" style="background:#111"></span>User ที่เลือก</span>
             <span><span class="box"></span>Car</span>
             <span><span class="ln"></span>LIKES</span>
             <span><span class="ln dash"></span>TEST_DROVE</span>
@@ -523,21 +478,21 @@ def draw_graph(rows: list[dict], focus: str | None = None, height: int = 620) ->
           const network = new vis.Network(document.getElementById("net"), {{ nodes, edges }}, {{
             autoResize: true,
             nodes: {{
-              font: {{ color: "#e2e8f0", size: 14, strokeWidth: 4, strokeColor: "#0a1020" }},
+              font: {{ color: "#111111", size: 14, strokeWidth: 4, strokeColor: "#fafafa" }},
               borderWidth: 2, scaling: {{ min: 10, max: 26 }},
             }},
             groups: {{
-              user:  {{ shape: "dot", color: {{ background: "#38bdf8", border: "#bae6fd", highlight: {{ background: "#7dd3fc", border: "#fff" }}, hover: {{ background: "#7dd3fc", border: "#fff" }} }} }},
-              focus: {{ shape: "dot", color: {{ background: "#fbbf24", border: "#fde68a", highlight: {{ background: "#fcd34d", border: "#fff" }}, hover: {{ background: "#fcd34d", border: "#fff" }} }} }},
-              car:   {{ shape: "box", margin: 9, shapeProperties: {{ borderRadius: 8 }},
-                       font: {{ color: "#1c1003", strokeWidth: 0, size: 13 }},
-                       color: {{ background: "#fb923c", border: "#fdba74", highlight: {{ background: "#fdba74", border: "#fff" }}, hover: {{ background: "#fdba74", border: "#fff" }} }} }},
+              user:  {{ shape: "dot", color: {{ background: "#9ca3af", border: "#ffffff", highlight: {{ background: "#4b5563", border: "#111" }}, hover: {{ background: "#6b7280", border: "#111" }} }} }},
+              focus: {{ shape: "dot", color: {{ background: "#111111", border: "#ffffff", highlight: {{ background: "#111111", border: "#4b5563" }}, hover: {{ background: "#111111", border: "#4b5563" }} }} }},
+              car:   {{ shape: "box", margin: 9, shapeProperties: {{ borderRadius: 2 }},
+                       font: {{ color: "#111111", strokeWidth: 0, size: 13 }}, borderWidth: 1.5,
+                       color: {{ background: "#ffffff", border: "#111111", highlight: {{ background: "#f3f4f6", border: "#111" }}, hover: {{ background: "#f3f4f6", border: "#111" }} }} }},
             }},
             edges: {{
               arrows: {{ to: {{ enabled: true, scaleFactor: 0.55 }} }},
               width: 1.6, selectionWidth: 1.5, hoverWidth: 0.8,
               smooth: {{ type: "dynamic" }},
-              font: {{ size: 10, color: "#fca5a5", strokeWidth: 0, align: "middle" }},
+              font: {{ size: 10, color: "#c2410c", strokeWidth: 3, strokeColor: "#fafafa", align: "middle" }},
             }},
             physics: {{
               solver: "forceAtlas2Based",
@@ -584,18 +539,18 @@ require_connection()
 
 # key = ชื่อหน้า (ใช้ใน if/elif ด้านล่าง), value = ป้ายที่โชว์บนแถบเมนู
 PAGES = {
-    "Dashboard": "📊 ภาพรวม",
-    "Recommendations": "✨ แนะนำรถ",
-    "Car Search": "🔎 ค้นหา",
-    "3D Showroom": "🧊 3D Showroom",
-    "จัดการข้อมูล": "🛠️ จัดการข้อมูล",
-    "Graph Explorer": "🕸️ กราฟ",
-    "Admin / Setup": "⚙️ ตั้งค่า",
+    "Dashboard": "ภาพรวม",
+    "Recommendations": "แนะนำรถ",
+    "Car Search": "ค้นหา",
+    "3D Showroom": "3D Showroom",
+    "จัดการข้อมูล": "จัดการข้อมูล",
+    "Graph Explorer": "กราฟ",
+    "Admin / Setup": "ตั้งค่า",
 }
 
 # ---------------- แถบเมนูด้านบน ----------------
 with st.container(key="gc_nav", horizontal=True, vertical_alignment="center", gap="medium"):
-    st.html('<div class="gc-brand">🚗 Car <span>Recommended</span></div>')
+    st.html('<div class="gc-brand">Car <span>Recommended</span></div>')
     page = st.segmented_control(
         "เมนู",
         list(PAGES),
@@ -605,21 +560,13 @@ with st.container(key="gc_nav", horizontal=True, vertical_alignment="center", ga
         key="nav",
         label_visibility="collapsed",
     ) or "Dashboard"
-    bg_on = st.toggle("3D", value=True, key="bg_on", help="เปิด/ปิดพื้นหลัง 3D (ปิดได้ถ้าเครื่องช้าหรือใช้มือถือ)")
-
-render_background(list(PAGES).index(page), enabled=bg_on)
 
 st.html(
     """
     <div class="hero">
-      <div class="eyebrow">Graph-powered recommendation · Neo4j</div>
-      <div class="hero-title">Car <span>Recommended</span></div>
-      <p>ระบบแนะนำรถยนต์ด้วย Graph Database — ดูว่าคนที่ชอบรถแบบเดียวกับคุณ ชอบและลองขับรุ่นไหน</p>
-      <div class="chips">
-        <span class="chip">(User)-[:LIKES]-&gt;(Car)</span>
-        <span class="chip">(User)-[:TEST_DROVE]-&gt;(Car)</span>
-        <span class="chip">Neo4j Aura</span>
-      </div>
+      <div class="eyebrow">Car Recommendation · Neo4j</div>
+      <div class="hero-title">Find your next car.</div>
+      <p>ระบบแนะนำรถยนต์จากคนที่ชอบรถแบบเดียวกับคุณ ดูว่าเขาชอบและลองขับรุ่นไหน</p>
     </div>
     """
 )
@@ -639,9 +586,9 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
         c3.metric("LIKES", m.get("likes", 0))
         c4.metric("TEST_DROVE", m.get("test_drives", 0))
 
-        st.markdown("### 🏆 รถยอดนิยม")
+        st.markdown("### รถยอดนิยม")
         popular = popular_cars(10)
-        car_gallery(popular[:4], detail=lambda r: f"{r['brand']} · ❤️ {r['likes']} · 🔑 {r['test_drives']}")
+        car_gallery(popular[:4], detail=lambda r: f"{r['brand']} · ชอบ {r['likes']} · ลองขับ {r['test_drives']}")
         with st.expander("ดูตารางรถยอดนิยม 10 อันดับ"):
             st.dataframe(df(popular, ["car", "brand", "likes", "test_drives"]), width="stretch", hide_index=True)
 
@@ -651,20 +598,20 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
         if profile:
             left, mid, right = st.columns(3)
             with left:
-                st.markdown(f"### 👤 {profile['name']}")
+                st.markdown(f"### {profile['name']}")
                 st.markdown("**รถที่ชอบ**")
                 if profile["liked"]:
                     car_gallery(profile["liked"], cols=2)
                 else:
                     st.info("ยังไม่ได้ชอบรถคันไหน")
             with mid:
-                st.markdown("### 🔑 ประวัติการทดลองขับ")
+                st.markdown("### ประวัติการทดลองขับ")
                 if profile["test_drives"]:
                     car_gallery(profile["test_drives"], cols=2, detail=lambda r: f"ลองขับ {r['test_date']}")
                 else:
                     st.info("ยังไม่เคยทดลองขับ")
             with right:
-                st.markdown("### 👥 คนที่ชอบรถคล้ายกัน")
+                st.markdown("### คนที่ชอบรถคล้ายกัน")
                 sims = similar_users(name)
                 if sims:
                     st.dataframe(df(sims), width="stretch", hide_index=True)
@@ -675,7 +622,7 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
     # Recommendations
     # =====================================================================
     elif page == "Recommendations":
-        st.subheader("✨ รถที่แนะนำ")
+        st.subheader("รถที่แนะนำ")
         name = user_selector("rec_user")
 
         c1, c2, c3 = st.columns([2, 1, 1])
@@ -717,7 +664,7 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
 
         if rows:
             st.divider()
-            pick = st.selectbox("🧊 ดูรถที่แนะนำแบบ 3D", [r["car"] for r in rows], key="rec_3d")
+            pick = st.selectbox("ดูรถที่แนะนำแบบ 3D", [r["car"] for r in rows], key="rec_3d")
             chosen = next(r for r in rows if r["car"] == pick)
             show_3d(chosen.get("model"), chosen.get("image"), height=380, alt=pick)
 
@@ -725,13 +672,13 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
     # Car Search
     # =====================================================================
     elif page == "Car Search":
-        st.subheader("🔎 ค้นหารถ")
+        st.subheader("ค้นหารถ")
         c1, c2 = st.columns([2, 1])
         keyword = c1.text_input("ชื่อรุ่น", placeholder="เช่น Civic, Mazda, Camry")
         brand = c2.selectbox("ยี่ห้อ", [""] + list_brands(), format_func=lambda x: "ทุกยี่ห้อ" if x == "" else x)
         rows = search_cars(keyword, brand)
         st.write(f"พบ {len(rows)} รายการ")
-        car_gallery(rows, detail=lambda r: f"{r['brand']} · ❤️ {r['likes']} · 🔑 {r['test_drives']}")
+        car_gallery(rows, detail=lambda r: f"{r['brand']} · ชอบ {r['likes']} · ลองขับ {r['test_drives']}")
         with st.expander("ดูแบบตาราง"):
             st.dataframe(df(rows, ["car", "brand", "image", "likes", "test_drives", "liked_by"]),
                          width="stretch", hide_index=True)
@@ -740,7 +687,7 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
     # 3D Showroom
     # =====================================================================
     elif page == "3D Showroom":
-        st.subheader("🧊 3D Showroom")
+        st.subheader("3D Showroom")
         cars = get_cars()
         if not cars:
             st.info("ยังไม่มีรถ กรุณาไปหน้า จัดการข้อมูล หรือ Admin / Setup ก่อน")
@@ -756,8 +703,8 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
             st.markdown(f"## {target}")
             st.caption(car.get("brand") or "ไม่ระบุยี่ห้อ")
             m1, m2 = st.columns(2)
-            m1.metric("❤️ ชอบ", car["likes"])
-            m2.metric("🔑 ลองขับ", car["test_drives"])
+            m1.metric("ชอบ", car["likes"])
+            m2.metric("ลองขับ", car["test_drives"])
             detail = next((r for r in search_cars(target) if r["car"] == target), None)
             liked_by = (detail or {}).get("liked_by") or []
             st.markdown("**คนที่ชอบ:** " + (", ".join(sorted(liked_by)) or "ยังไม่มี"))
@@ -780,7 +727,7 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
     # จัดการข้อมูล (เพิ่ม / ลบ)
     # =====================================================================
     elif page == "จัดการข้อมูล":
-        st.subheader("🛠️ จัดการข้อมูล")
+        st.subheader("จัดการข้อมูล")
         st.caption("✏️ ดับเบิลคลิกช่องในตารางเพื่อแก้ไขได้ทันที แล้วกดปุ่ม 💾 บันทึก  ·  หรือใช้ฟอร์ม เพิ่ม / แก้ไข / ลบ ด้านล่างตาราง")
         tab_user, tab_car, tab_like, tab_td = st.tabs(["👤 User", "🚗 Car", "❤️ LIKES", "🔑 TEST_DROVE"])
 
@@ -1099,7 +1046,7 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
     # Graph Explorer
     # =====================================================================
     elif page == "Graph Explorer":
-        st.subheader("🕸️ Graph Explorer")
+        st.subheader("Graph Explorer")
         names = user_names()
         c1, c2 = st.columns([2, 1])
         choice = c1.selectbox("แสดงกราฟของ", ["(ทั้งหมด)"] + names)
@@ -1118,7 +1065,7 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
     # Admin / Setup
     # =====================================================================
     elif page == "Admin / Setup":
-        st.subheader("⚙️ Setup ข้อมูลตัวอย่าง")
+        st.subheader("Setup ข้อมูลตัวอย่าง")
         st.markdown(
             """
             **Graph schema**
