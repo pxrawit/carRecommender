@@ -492,3 +492,116 @@ def remove_test_drive(user: str, car: str) -> int:
         write=True,
     )
     return rows[0]["deleted"] if rows else 0
+
+
+# ---------------------------------------------------------------------
+# Write: แก้ไข
+# ---------------------------------------------------------------------
+def _exists(label: str, name: str) -> bool:
+    rows = query(f"MATCH (n:{label} {{name:$name}}) RETURN count(n) AS n", {"name": name})
+    return bool(rows and rows[0]["n"])
+
+
+def rename_user(old: str, new: str) -> str:
+    """
+    เปลี่ยนชื่อ User (ความสัมพันธ์ทั้งหมดยังอยู่ เพราะเป็น node เดิม)
+    คืนค่า: "ok" | "same" | "empty" | "exists" (ชื่อใหม่ซ้ำ) | "notfound"
+    """
+    new = (new or "").strip()
+    if not new:
+        return "empty"
+    if new == old:
+        return "same"
+    if _exists("User", new):
+        return "exists"
+    rows = query(
+        "MATCH (u:User {name:$old}) SET u.name = $new RETURN count(u) AS n",
+        {"old": old, "new": new},
+        write=True,
+    )
+    return "ok" if rows and rows[0]["n"] else "notfound"
+
+
+def update_car(old: str, new_name: str, brand: str) -> str:
+    """
+    แก้ชื่อรุ่นและยี่ห้อของรถ (path รูป/โมเดลไม่เปลี่ยน)
+    คืนค่า: "ok" | "same" | "empty" | "exists" | "notfound"
+    """
+    new_name, brand = (new_name or "").strip(), (brand or "").strip()
+    if not new_name:
+        return "empty"
+    current = query("MATCH (c:Car {name:$old}) RETURN c.brand AS brand", {"old": old})
+    if not current:
+        return "notfound"
+    if new_name == old and (current[0]["brand"] or "") == brand:
+        return "same"
+    if new_name != old and _exists("Car", new_name):
+        return "exists"
+    query(
+        "MATCH (c:Car {name:$old}) SET c.name = $new, c.brand = $brand",
+        {"old": old, "new": new_name, "brand": brand},
+        write=True,
+    )
+    return "ok"
+
+
+def update_test_drive(user: str, car: str, new_date: str, new_car: str | None = None) -> str:
+    """
+    แก้วันที่ทดลองขับ และ (ถ้าส่ง new_car) ย้ายไปเป็นรถคันอื่น
+    คืนค่า: "ok" | "notfound" | "exists" (User เคยลองขับรถคันใหม่อยู่แล้ว)
+    """
+    if new_car and new_car != car:
+        rows = query(
+            """
+            MATCH (u:User {name:$user})-[r:TEST_DROVE]->(:Car {name:$car})
+            MATCH (n:Car {name:$new_car})
+            WHERE NOT (u)-[:TEST_DROVE]->(n)
+            CREATE (u)-[:TEST_DROVE {test_date: date($date)}]->(n)
+            DELETE r
+            RETURN count(*) AS n
+            """,
+            {"user": user, "car": car, "new_car": new_car, "date": new_date},
+            write=True,
+        )
+        if rows and rows[0]["n"]:
+            return "ok"
+        exists = query(
+            "MATCH (:User {name:$user})-[:TEST_DROVE]->(:Car {name:$new_car}) RETURN count(*) AS n",
+            {"user": user, "new_car": new_car},
+        )
+        return "exists" if exists and exists[0]["n"] else "notfound"
+    rows = query(
+        """
+        MATCH (:User {name:$user})-[r:TEST_DROVE]->(:Car {name:$car})
+        SET r.test_date = date($date)
+        RETURN count(r) AS n
+        """,
+        {"user": user, "car": car, "date": new_date},
+        write=True,
+    )
+    return "ok" if rows and rows[0]["n"] else "notfound"
+
+
+def change_like(user: str, old_car: str, new_car: str) -> str:
+    """เปลี่ยนรถที่ User ชอบ จาก old_car เป็น new_car   คืนค่า: "ok" | "same" | "exists" | "notfound" """
+    if old_car == new_car:
+        return "same"
+    rows = query(
+        """
+        MATCH (u:User {name:$user})-[r:LIKES]->(:Car {name:$old})
+        MATCH (n:Car {name:$new})
+        WHERE NOT (u)-[:LIKES]->(n)
+        CREATE (u)-[:LIKES]->(n)
+        DELETE r
+        RETURN count(*) AS n
+        """,
+        {"user": user, "old": old_car, "new": new_car},
+        write=True,
+    )
+    if rows and rows[0]["n"]:
+        return "ok"
+    exists = query(
+        "MATCH (:User {name:$user})-[:LIKES]->(:Car {name:$new}) RETURN count(*) AS n",
+        {"user": user, "new": new_car},
+    )
+    return "exists" if exists and exists[0]["n"] else "notfound"
