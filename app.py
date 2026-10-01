@@ -46,7 +46,7 @@ st.set_page_config(
     page_title="GraphCar Recommender",
     page_icon="🚗",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.html(
@@ -71,7 +71,63 @@ st.html(
       [data-testid="stHeader"] { background: transparent !important; }
       .block-container { max-width: 1200px; padding-top: 2.2rem; padding-bottom: 4rem; }
 
-      /* sidebar แบบกระจกฝ้า */
+      /* ซ่อน sidebar และ header เดิม ใช้แถบเมนูด้านบนแทน */
+      [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"],
+      [data-testid="stHeader"] { display: none !important; }
+      .block-container { padding-top: 6.2rem !important; }
+
+      /* ---------- แถบเมนูด้านบน ---------- */
+      .st-key-gc_nav {
+        position: fixed !important; top: 14px; left: 50%; transform: translateX(-50%);
+        width: min(1240px, calc(100vw - 28px)) !important; z-index: 1000;
+        padding: .5rem .6rem .5rem 1.1rem !important; flex-wrap: nowrap !important;
+        background: rgba(8, 11, 18, .72); backdrop-filter: blur(18px) saturate(1.35);
+        border: 1px solid var(--line); border-radius: 20px;
+        box-shadow: 0 14px 44px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255,255,255,.05);
+        overflow-x: auto; scrollbar-width: none;
+      }
+      .st-key-gc_nav::-webkit-scrollbar { display: none; }
+      .st-key-gc_nav > div { flex: 0 0 auto; width: auto !important; }
+      .st-key-gc_nav > div:has(.stButtonGroup), .st-key-gc_nav > div:has([data-testid="stButtonGroup"]) { flex: 1 1 auto; display: flex; justify-content: center; }
+      .gc-brand {
+        font-family: 'Prompt', sans-serif; font-weight: 700; font-size: 1.2rem; color: #f8fafc;
+        white-space: nowrap; letter-spacing: .3px; padding-right: .4rem;
+      }
+      .gc-brand span { background: linear-gradient(90deg, #7dd3fc, #fbbf24); -webkit-background-clip: text; background-clip: text; color: transparent; }
+      .st-key-gc_nav [data-testid="stButtonGroup"] { gap: .25rem !important; flex-wrap: nowrap !important; }
+      .st-key-gc_nav [data-testid="stButtonGroup"] button {
+        background: transparent !important; border: 1px solid transparent !important;
+        border-radius: 999px !important; padding: .38rem .95rem !important; min-height: 0 !important;
+        color: #cbd5e1 !important; white-space: nowrap; transition: background .2s, color .2s, border-color .2s;
+      }
+      .st-key-gc_nav [data-testid="stButtonGroup"] button:hover {
+        background: rgba(56, 189, 248, .10) !important; color: #f8fafc !important;
+      }
+      .st-key-gc_nav [data-testid="stButtonGroup"] button[aria-checked="true"],
+      .st-key-gc_nav [data-testid="stButtonGroup"] button[data-selected="true"] {
+        background: linear-gradient(135deg, rgba(56,189,248,.28), rgba(56,189,248,.10)) !important;
+        border-color: rgba(56, 189, 248, .45) !important; color: #f0f9ff !important;
+        box-shadow: 0 0 18px rgba(56, 189, 248, .25);
+      }
+      .st-key-gc_nav > div:has([data-testid="stButtonGroup"]) { min-width: 0; }
+      .st-key-gc_nav [data-testid="stButtonGroup"] { width: max-content; }
+
+      /* มือถือ/จอแคบ: โลโก้ + สวิตช์อยู่แถวบน เมนูเลื่อนซ้าย-ขวาแถวล่าง */
+      @media (max-width: 900px) {
+        .st-key-gc_nav { flex-wrap: wrap !important; row-gap: .35rem !important; overflow: visible; padding: .55rem .7rem !important; }
+        .st-key-gc_nav > div:has(.gc-brand) { order: 1; flex: 1 1 auto; }
+        .st-key-gc_nav > div:has([data-testid="stCheckbox"]), .st-key-gc_nav > div:has([data-testid="stToggle"]) { order: 2; }
+        .st-key-gc_nav > div:has([data-testid="stButtonGroup"]) {
+          order: 3; flex: 1 1 100% !important; width: 100% !important; justify-content: flex-start !important;
+          overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+        }
+        .st-key-gc_nav > div:has([data-testid="stButtonGroup"])::-webkit-scrollbar { display: none; }
+        .block-container { padding-top: 8.4rem !important; }
+        .st-key-gc_panel { padding: 1.1rem 1rem 1.4rem; border-radius: 20px; }
+      }
+      .st-key-gc_nav [data-testid="stCheckbox"] label p, .st-key-gc_nav [data-testid="stToggle"] label p { color: #94a3b8; font-size: .85rem; }
+
+      /* sidebar แบบกระจกฝ้า (ไม่ได้ใช้แล้ว เก็บไว้เผื่อเปิดกลับ) */
       [data-testid="stSidebar"] {
         background: rgba(7, 10, 16, .74) !important; backdrop-filter: blur(16px);
         border-right: 1px solid var(--line);
@@ -344,23 +400,30 @@ def draw_graph(rows: list[dict], focus: str | None = None) -> None:
 # ---------------------------------------------------------------------
 require_connection()
 
+# key = ชื่อหน้า (ใช้ใน if/elif ด้านล่าง), value = ป้ายที่โชว์บนแถบเมนู
 PAGES = {
-    "Dashboard": "📊",
-    "Recommendations": "✨",
-    "Car Search": "🔎",
-    "3D Showroom": "🧊",
-    "จัดการข้อมูล": "🛠️",
-    "Graph Explorer": "🕸️",
-    "Admin / Setup": "⚙️",
+    "Dashboard": "📊 ภาพรวม",
+    "Recommendations": "✨ แนะนำรถ",
+    "Car Search": "🔎 ค้นหา",
+    "3D Showroom": "🧊 3D Showroom",
+    "จัดการข้อมูล": "🛠️ จัดการข้อมูล",
+    "Graph Explorer": "🕸️ กราฟ",
+    "Admin / Setup": "⚙️ ตั้งค่า",
 }
 
-with st.sidebar:
-    st.markdown("## 🚗 GraphCar")
-    st.caption("Neo4j Aura · Streamlit · Three.js")
-    page = st.radio("เมนู", list(PAGES), format_func=lambda p: f"{PAGES[p]}  {p}")
-    st.divider()
-    bg_on = st.toggle("พื้นหลัง 3D", value=True, help="ปิดได้ถ้าเครื่องช้าหรือใช้มือถือ")
-    st.caption("Car Recommender System ด้วย Graph Database")
+# ---------------- แถบเมนูด้านบน ----------------
+with st.container(key="gc_nav", horizontal=True, vertical_alignment="center", gap="medium"):
+    st.html('<div class="gc-brand">🚗 Graph<span>Car</span></div>')
+    page = st.segmented_control(
+        "เมนู",
+        list(PAGES),
+        format_func=lambda p: PAGES[p],
+        default="Dashboard",
+        required=True,
+        key="nav",
+        label_visibility="collapsed",
+    ) or "Dashboard"
+    bg_on = st.toggle("3D", value=True, key="bg_on", help="เปิด/ปิดพื้นหลัง 3D (ปิดได้ถ้าเครื่องช้าหรือใช้มือถือ)")
 
 render_background(list(PAGES).index(page), enabled=bg_on)
 
