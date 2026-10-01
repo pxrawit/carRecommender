@@ -48,7 +48,7 @@ from neo4j_service import (
 )
 
 st.set_page_config(
-    page_title="GraphCar Recommender",
+    page_title="Car Recommended",
     page_icon="🚗",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -595,7 +595,7 @@ PAGES = {
 
 # ---------------- แถบเมนูด้านบน ----------------
 with st.container(key="gc_nav", horizontal=True, vertical_alignment="center", gap="medium"):
-    st.html('<div class="gc-brand">🚗 Graph<span>Car</span></div>')
+    st.html('<div class="gc-brand">🚗 Car <span>Recommended</span></div>')
     page = st.segmented_control(
         "เมนู",
         list(PAGES),
@@ -612,8 +612,8 @@ render_background(list(PAGES).index(page), enabled=bg_on)
 st.html(
     """
     <div class="hero">
-      <div class="eyebrow">Graph-powered car recommender</div>
-      <div class="hero-title">GraphCar <span>Showroom</span></div>
+      <div class="eyebrow">Graph-powered recommendation · Neo4j</div>
+      <div class="hero-title">Car <span>Recommended</span></div>
       <p>ระบบแนะนำรถยนต์ด้วย Graph Database — ดูว่าคนที่ชอบรถแบบเดียวกับคุณ ชอบและลองขับรุ่นไหน</p>
       <div class="chips">
         <span class="chip">(User)-[:LIKES]-&gt;(Car)</span>

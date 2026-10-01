@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  GraphCar — 3D background scene (Three.js)
+  Car Recommended — 3D background scene (Three.js)
   - โรงจอด/โชว์รูมแบบ procedural (ไม่ต้องมีไฟล์) หรือโหลด showroom.glb ถ้ามี (__SHOWROOM_URL__)
   - กล้องหมุนตามเมาส์ + การ scroll ของหน้า และหมุนไปมุมใหม่เมื่อเปลี่ยนหน้า (#gc-page[data-page])
   ไฟล์นี้ถูกฝังผ่าน st.iframe ซึ่งเป็น same-origin จึงอ่าน event ของหน้า Streamlit (window.parent) ได้
@@ -130,7 +130,7 @@ function buildProcedural() {
     }
   });
 
-  // คีออสก์กลางห้อง พร้อมจอ GraphCar
+  // คีออสก์กลางห้อง พร้อมจอ Car Recommended
   const kiosk = new THREE.Group(); hall.add(kiosk);
   add(new THREE.BoxGeometry(5.2, 3.4, 5.2), M.kiosk, 0, 1.7, 0, kiosk);
   add(new THREE.BoxGeometry(5.8, 0.9, 5.8), M.beam, 0, 3.85, 0, kiosk);
@@ -143,9 +143,10 @@ function buildProcedural() {
       ctx.beginPath(); ctx.moveTo(...nodes[a]); ctx.lineTo(...nodes[b]); ctx.stroke();
     });
     nodes.forEach(([x, y], i) => { ctx.fillStyle = i % 2 ? "#fde68a" : "#bae6fd"; ctx.beginPath(); ctx.arc(x, y, 22, 0, 7); ctx.fill(); });
-    ctx.fillStyle = "#fff"; ctx.font = "bold 120px sans-serif"; ctx.fillText("GraphCar", 90, 230);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 130px sans-serif"; ctx.fillText("Car", 90, 200);
+    ctx.font = "bold 112px sans-serif"; ctx.fillText("Recommended", 90, 320);
     ctx.font = "44px sans-serif"; ctx.fillStyle = "rgba(255,255,255,.85)";
-    ctx.fillText("Neo4j · Graph Recommendation", 96, 310);
+    ctx.fillText("Neo4j · Graph Recommendation", 96, 395);
   });
   screenTex.repeat.set(1, 1);
   const screenMat = new THREE.MeshStandardMaterial({ map: screenTex, emissive: 0xffffff, emissiveMap: screenTex, emissiveIntensity: 0.9 });
