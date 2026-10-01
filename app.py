@@ -67,8 +67,19 @@ st.html(
       }
       html, body, .stApp, .stMarkdown, p, li, label, input, textarea, button, [data-testid="stWidgetLabel"] {
         font-family: 'Inter', 'IBM Plex Sans Thai', system-ui, sans-serif;
-        color: var(--ink);
       }
+      .stApp { color: var(--ink); }
+
+      /* ปุ่มพื้นดำ: ตัวหนังสือขาวเสมอ */
+      [data-testid^="stBaseButton-primary"], [data-testid^="stBaseButton-primary"] *,
+      .stDownloadButton button[kind="primary"], .stDownloadButton button[kind="primary"] * {
+        color: #ffffff !important;
+      }
+      [data-testid^="stBaseButton-primary"]:hover { background: #333333 !important; border-color: #333333 !important; }
+      [data-testid^="stBaseButton-primary"]:disabled, [data-testid^="stBaseButton-primary"]:disabled * { color: #d1d5db !important; }
+      /* ป้าย/แท็กที่เลือกใน multiselect และ tooltip พื้นเข้ม */
+      [data-baseweb="tag"], [data-baseweb="tag"] * { color: #ffffff !important; }
+      [data-baseweb="tooltip"] *, [data-testid="stTooltipContent"] * { color: #ffffff !important; }
       h1, h2, h3, h4 { font-family: 'Inter', 'IBM Plex Sans Thai', sans-serif !important; font-weight: 600 !important; letter-spacing: -.01em; color: var(--ink); }
       .stApp { background: #ffffff; }
 
