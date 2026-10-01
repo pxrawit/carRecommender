@@ -152,6 +152,16 @@ st.html(
         background: #ffffff; padding: 0; box-sizing: border-box; border-radius: 0;
       }
 
+      [data-testid="stVerticalBlockBorderWrapper"]:has(> div > [class*="st-key-pf_"]),
+      [class*="st-key-pf_"] { border-radius: 4px !important; border-color: var(--line) !important; padding: 1rem 1.1rem !important; }
+      [class*="st-key-pf_"] h4 { font-size: 1.05rem !important; padding-bottom: .55rem !important; margin-bottom: .4rem !important; border-bottom: 1px solid var(--line); }
+
+      .sim-row { padding: .7rem 0; border-bottom: 1px solid var(--line); }
+      .sim-row:last-child { border-bottom: 0; }
+      .sim-head { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+      .sim-head span { color: var(--ink-2); font-size: .85rem; white-space: nowrap; }
+      .sim-cars { color: var(--muted); font-size: .85rem; margin-top: .2rem; }
+
       .car-card { padding: .4rem 0 1rem; border-bottom: 1px solid var(--line); margin-bottom: .75rem; }
       .car-card h3 { margin: .45rem 0 .15rem 0; font-size: 1.35rem; }
       .score-pill {
@@ -238,6 +248,11 @@ def save_button(n_changes: int, key: str, apply) -> None:
         report(apply())
     if b2.button("↩️ ยกเลิกการแก้ไข", width="stretch", key=f"{key}_cancel"):
         done("ยกเลิกการแก้ไขแล้ว", "info")
+
+
+def crud_columns():
+    """3 แถว x 3 คอลัมน์: (ช่องกรอก, ปุ่ม, หมายเหตุ)  ปุ่ม เพิ่ม/แก้ไข/ลบ จึงอยู่บรรทัดเดียวกันเสมอ"""
+    return st.columns(3, gap="medium"), st.columns(3, gap="medium"), st.columns(3, gap="medium")
 
 
 def clean(value) -> str:
@@ -607,25 +622,31 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
         name = user_selector("dash_user")
         profile = get_profile(name)
         if profile:
-            left, mid, right = st.columns(3)
-            with left:
-                st.markdown(f"### {profile['name']}")
-                st.markdown("**รถที่ชอบ**")
+            st.markdown(f"### โปรไฟล์ของ {profile['name']}")
+            left, mid, right = st.columns(3, gap="medium")
+            with left, st.container(border=True, height="stretch", key="pf_liked"):
+                st.markdown("#### รถที่ชอบ")
                 if profile["liked"]:
                     car_gallery(profile["liked"], cols=2)
                 else:
                     st.info("ยังไม่ได้ชอบรถคันไหน")
-            with mid:
-                st.markdown("### ประวัติการทดลองขับ")
+            with mid, st.container(border=True, height="stretch", key="pf_td"):
+                st.markdown("#### ประวัติการทดลองขับ")
                 if profile["test_drives"]:
                     car_gallery(profile["test_drives"], cols=2, detail=lambda r: f"ลองขับ {r['test_date']}")
                 else:
                     st.info("ยังไม่เคยทดลองขับ")
-            with right:
-                st.markdown("### คนที่ชอบรถคล้ายกัน")
+            with right, st.container(border=True, height="stretch", key="pf_sim"):
+                st.markdown("#### คนที่ชอบรถคล้ายกัน")
                 sims = similar_users(name)
                 if sims:
-                    st.dataframe(df(sims), width="stretch", hide_index=True)
+                    rows_html = "".join(
+                        f'<div class="sim-row"><div class="sim-head"><b>{html.escape(str(r["user"]))}</b>'
+                        f'<span>ชอบตรงกัน {r.get("same_cars", "")} คัน</span></div>'
+                        f'<div class="sim-cars">{html.escape(", ".join(r.get("cars") or []))}</div></div>'
+                        for r in sims
+                    )
+                    st.html(f'<div class="sim-list">{rows_html}</div>')
                 else:
                     st.info("ยังไม่มีคนที่ชอบรถตรงกัน")
 
@@ -762,40 +783,43 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
                 (f"{o} → {n}", rename_user(o, n)) for o, n in changes
             ])
 
-            c1, c2, c3 = st.columns(3)
-            with c1:
+            top, btn, note = crud_columns()
+            with top[0]:
                 st.markdown("#### ➕ เพิ่ม User")
-                with st.form("add_user_form", clear_on_submit=True):
-                    new_name = st.text_input("ชื่อ")
-                    if st.form_submit_button("เพิ่ม", type="primary", width="stretch"):
-                        if not new_name.strip():
-                            st.error("กรุณาใส่ชื่อ")
-                        elif add_user(new_name):
-                            done(f"เพิ่ม User '{new_name.strip()}' แล้ว")
-                        else:
-                            st.warning(f"มี User '{new_name.strip()}' อยู่แล้ว")
-            with c2:
+                new_name = st.text_input("ชื่อ", key=editor_key("new_user"))
+            if btn[0].button("เพิ่ม User", type="primary", width="stretch", key="add_user_btn"):
+                if not new_name.strip():
+                    note[0].error("กรุณาใส่ชื่อ")
+                elif add_user(new_name):
+                    done(f"เพิ่ม User '{new_name.strip()}' แล้ว")
+                else:
+                    note[0].warning(f"มี User '{new_name.strip()}' อยู่แล้ว")
+
+            with top[1]:
                 st.markdown("#### ✏️ แก้ไข User")
                 if users:
-                    target = st.selectbox("เลือก User", [u["name"] for u in users], key="edit_user")
-                    renamed = st.text_input("ชื่อใหม่", value=target, key=f"edit_user_name_{target}")
-                    if st.button("บันทึกชื่อ", type="primary", width="stretch", key="edit_user_btn"):
-                        report([(f"{target} → {renamed.strip()}", rename_user(target, renamed))])
-                    st.caption("ความสัมพันธ์ LIKES / TEST_DROVE ของคนนี้ยังอยู่ครบ")
+                    edit_target = st.selectbox("เลือก User", [u["name"] for u in users], key="edit_user")
+                    renamed = st.text_input("ชื่อใหม่", value=edit_target, key=f"edit_user_name_{edit_target}")
                 else:
                     st.info("ยังไม่มี User")
-            with c3:
+            if users:
+                if btn[1].button("บันทึกชื่อ", type="primary", width="stretch", key="edit_user_btn"):
+                    report([(f"{edit_target} → {renamed.strip()}", rename_user(edit_target, renamed))])
+                note[1].caption("ความสัมพันธ์ LIKES / TEST_DROVE ของคนนี้ยังอยู่ครบ")
+
+            with top[2]:
                 st.markdown("#### 🗑️ ลบ User")
                 if users:
-                    target = st.selectbox("เลือก User", [u["name"] for u in users], key="del_user")
-                    info = next(u for u in users if u["name"] == target)
-                    st.caption(f"จะลบ LIKES {info['likes']} เส้น และ TEST_DROVE {info['test_drives']} เส้นของ {target} ไปด้วย")
+                    del_target = st.selectbox("เลือก User", [u["name"] for u in users], key="del_user")
                     confirm = st.checkbox("ยืนยันการลบ", key="confirm_del_user")
-                    if st.button("ลบ User", disabled=not confirm, width="stretch"):
-                        delete_user(target)
-                        done(f"ลบ User '{target}' แล้ว", "warning")
                 else:
                     st.info("ยังไม่มี User")
+            if users:
+                if btn[2].button("ลบ User", disabled=not confirm, width="stretch", key="del_user_btn"):
+                    delete_user(del_target)
+                    done(f"ลบ User '{del_target}' แล้ว", "warning")
+                info = next(u for u in users if u["name"] == del_target)
+                note[2].caption(f"จะลบ LIKES {info['likes']} เส้น และ TEST_DROVE {info['test_drives']} เส้นของ {del_target} ไปด้วย")
 
         # ---------------- Car ----------------
         with tab_car:
@@ -822,68 +846,73 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
                 (f"{o} → {n} ({b})", update_car(o, n, b)) for o, n, b in changes
             ])
 
-            c1, c2, c3 = st.columns(3)
-            with c1:
+            top, btn, note = crud_columns()
+            with top[0]:
                 st.markdown("#### ➕ เพิ่ม Car")
-                with st.form("add_car_form", clear_on_submit=True):
-                    car_name = st.text_input("ชื่อรุ่น", placeholder="เช่น Toyota Fortuner")
-                    car_brand = st.text_input("ยี่ห้อ", placeholder="เว้นว่างได้ จะใช้คำแรกของชื่อรุ่น")
-                    car_upload = st.file_uploader("รูปรถ (ไม่บังคับ)", type=IMAGE_TYPES)
-                    car_path = st.text_input("หรือใส่ path/URL ของรูป",
-                                             placeholder="เช่น images/toyota_fortuner.jpg")
-                    model_upload = st.file_uploader("โมเดล 3D .glb (ไม่บังคับ)", type=MODEL_TYPES)
-                    model_path = st.text_input("หรือใส่ path/URL ของโมเดล",
-                                               placeholder="เช่น models/toyota_fortuner.glb")
-                    if st.form_submit_button("เพิ่ม", type="primary", width="stretch"):
-                        if not car_name.strip():
-                            st.error("กรุณาใส่ชื่อรุ่น")
-                        else:
-                            brand_value = car_brand.strip() or car_name.strip().split()[0]
-                            if car_upload is not None:
-                                image_value = save_uploaded_image(car_name, car_upload)
-                            elif car_path.strip():
-                                image_value = car_path.strip()
-                            elif resolve_image(default_image_path(car_name)):
-                                image_value = default_image_path(car_name)  # มีไฟล์ชื่อตรงกันใน repo อยู่แล้ว
-                            else:
-                                image_value = ""
-                            if model_upload is not None:
-                                model_value = save_uploaded_model(car_name, model_upload)
-                            elif model_path.strip():
-                                model_value = model_path.strip()
-                            elif resolve_local(default_model_path(car_name)):
-                                model_value = default_model_path(car_name)  # มีไฟล์ชื่อตรงกันใน repo อยู่แล้ว
-                            else:
-                                model_value = ""
-                            if add_car(car_name, brand_value, image_value, model_value):
-                                done(f"เพิ่ม Car '{car_name.strip()}' ({brand_value}) แล้ว")
-                            else:
-                                done(f"มี '{car_name.strip()}' อยู่แล้ว อัปเดตยี่ห้อเป็น {brand_value}", "info")
-            with c2:
+                car_name = st.text_input("ชื่อรุ่น", placeholder="เช่น Toyota Fortuner", key=editor_key("new_car"))
+                car_brand = st.text_input("ยี่ห้อ", placeholder="เว้นว่างได้ จะใช้คำแรกของชื่อรุ่น",
+                                          key=editor_key("new_car_brand"))
+                with st.expander("รูป / โมเดล 3D (ไม่บังคับ)"):
+                    car_upload = st.file_uploader("รูปรถ", type=IMAGE_TYPES, key=editor_key("new_car_img"))
+                    car_path = st.text_input("หรือใส่ path/URL ของรูป", placeholder="เช่น images/toyota_fortuner.jpg",
+                                             key=editor_key("new_car_img_path"))
+                    model_upload = st.file_uploader("โมเดล 3D .glb", type=MODEL_TYPES, key=editor_key("new_car_glb"))
+                    model_path = st.text_input("หรือใส่ path/URL ของโมเดล", placeholder="เช่น models/toyota_fortuner.glb",
+                                               key=editor_key("new_car_glb_path"))
+            if btn[0].button("เพิ่ม Car", type="primary", width="stretch", key="add_car_btn"):
+                if not car_name.strip():
+                    note[0].error("กรุณาใส่ชื่อรุ่น")
+                else:
+                    brand_value = car_brand.strip() or car_name.strip().split()[0]
+                    if car_upload is not None:
+                        image_value = save_uploaded_image(car_name, car_upload)
+                    elif car_path.strip():
+                        image_value = car_path.strip()
+                    elif resolve_image(default_image_path(car_name)):
+                        image_value = default_image_path(car_name)  # มีไฟล์ชื่อตรงกันใน repo อยู่แล้ว
+                    else:
+                        image_value = ""
+                    if model_upload is not None:
+                        model_value = save_uploaded_model(car_name, model_upload)
+                    elif model_path.strip():
+                        model_value = model_path.strip()
+                    elif resolve_local(default_model_path(car_name)):
+                        model_value = default_model_path(car_name)  # มีไฟล์ชื่อตรงกันใน repo อยู่แล้ว
+                    else:
+                        model_value = ""
+                    if add_car(car_name, brand_value, image_value, model_value):
+                        done(f"เพิ่ม Car '{car_name.strip()}' ({brand_value}) แล้ว")
+                    else:
+                        done(f"มี '{car_name.strip()}' อยู่แล้ว อัปเดตยี่ห้อเป็น {brand_value}", "info")
+
+            with top[1]:
                 st.markdown("#### ✏️ แก้ไข Car")
                 if cars:
-                    target = st.selectbox("เลือกรถ", [c["name"] for c in cars], key="edit_car")
-                    car = next(c for c in cars if c["name"] == target)
-                    new_car_name = st.text_input("ชื่อรุ่นใหม่", value=target, key=f"edit_car_name_{target}")
-                    new_brand = st.text_input("ยี่ห้อ", value=car.get("brand") or "", key=f"edit_car_brand_{target}")
-                    if st.button("บันทึกรถ", type="primary", width="stretch", key="edit_car_btn"):
-                        report([(f"{target} → {new_car_name.strip()} ({new_brand.strip()})",
-                                 update_car(target, new_car_name, new_brand))])
-                    st.caption("รูป/โมเดล แก้ได้ที่ส่วน 🖼️ ด้านล่าง")
+                    edit_target = st.selectbox("เลือกรถ", [c["name"] for c in cars], key="edit_car")
+                    edit_car = next(c for c in cars if c["name"] == edit_target)
+                    new_car_name = st.text_input("ชื่อรุ่นใหม่", value=edit_target, key=f"edit_car_name_{edit_target}")
+                    new_brand = st.text_input("ยี่ห้อ", value=edit_car.get("brand") or "", key=f"edit_car_brand_{edit_target}")
                 else:
                     st.info("ยังไม่มีรถ")
-            with c3:
+            if cars:
+                if btn[1].button("บันทึกรถ", type="primary", width="stretch", key="edit_car_btn"):
+                    report([(f"{edit_target} → {new_car_name.strip()} ({new_brand.strip()})",
+                             update_car(edit_target, new_car_name, new_brand))])
+                note[1].caption("รูป/โมเดล แก้ได้ที่ส่วน 🖼️ ด้านล่าง")
+
+            with top[2]:
                 st.markdown("#### 🗑️ ลบ Car")
                 if cars:
-                    target = st.selectbox("เลือกรถ", [c["name"] for c in cars], key="del_car")
-                    info = next(c for c in cars if c["name"] == target)
-                    st.caption(f"จะลบ LIKES {info['likes']} เส้น และ TEST_DROVE {info['test_drives']} เส้นที่ชี้มาที่ {target} ไปด้วย")
+                    del_target = st.selectbox("เลือกรถ", [c["name"] for c in cars], key="del_car")
                     confirm = st.checkbox("ยืนยันการลบ", key="confirm_del_car")
-                    if st.button("ลบ Car", disabled=not confirm, width="stretch"):
-                        delete_car(target)
-                        done(f"ลบ Car '{target}' แล้ว", "warning")
                 else:
                     st.info("ยังไม่มีรถ")
+            if cars:
+                if btn[2].button("ลบ Car", disabled=not confirm, width="stretch", key="del_car_btn"):
+                    delete_car(del_target)
+                    done(f"ลบ Car '{del_target}' แล้ว", "warning")
+                info = next(c for c in cars if c["name"] == del_target)
+                note[2].caption(f"จะลบ LIKES {info['likes']} เส้น และ TEST_DROVE {info['test_drives']} เส้นที่ชี้มาที่ {del_target} ไปด้วย")
 
             st.divider()
             st.markdown("#### 🖼️ เปลี่ยนรูป / โมเดล 3D")
@@ -951,20 +980,21 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
                 (f"{u}: {o} → {n}", change_like(u, o, n)) for u, o, n in changes
             ])
 
-            c1, c2, c3 = st.columns(3)
-            with c1:
+            top, btn, note = crud_columns()
+            with top[0]:
                 st.markdown("#### ➕ เพิ่ม LIKES")
                 if users and cars:
                     u = st.selectbox("User", users, key="like_user")
                     c = st.selectbox("Car", cars, key="like_car")
-                    if st.button("เพิ่ม LIKES", type="primary", width="stretch"):
-                        if add_like(u, c):
-                            done(f"{u} -[:LIKES]-> {c}")
-                        else:
-                            st.warning(f"{u} ชอบ {c} อยู่แล้ว")
                 else:
                     st.info("ต้องมีทั้ง User และ Car ก่อน")
-            with c2:
+            if users and cars and btn[0].button("เพิ่ม LIKES", type="primary", width="stretch", key="add_like_btn"):
+                if add_like(u, c):
+                    done(f"{u} -[:LIKES]-> {c}")
+                else:
+                    note[0].warning(f"{u} ชอบ {c} อยู่แล้ว")
+
+            with top[1]:
                 st.markdown("#### ✏️ เปลี่ยนรถที่ชอบ")
                 if likes:
                     labels = {f"{x['user']} → {x['car']}": x for x in likes}
@@ -972,21 +1002,22 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
                     x = labels[chosen]
                     new_c = st.selectbox("เปลี่ยนเป็นรถ", cars, index=cars.index(x["car"]) if x["car"] in cars else 0,
                                          key=f"edit_like_car_{chosen}")
-                    if st.button("บันทึก LIKES", type="primary", width="stretch", key="edit_like_btn"):
-                        report([(f"{x['user']}: {x['car']} → {new_c}", change_like(x["user"], x["car"], new_c))])
                 else:
                     st.info("ยังไม่มี LIKES")
-            with c3:
+            if likes and btn[1].button("บันทึก LIKES", type="primary", width="stretch", key="edit_like_btn"):
+                report([(f"{x['user']}: {x['car']} → {new_c}", change_like(x["user"], x["car"], new_c))])
+
+            with top[2]:
                 st.markdown("#### 🗑️ ลบ LIKES")
                 if likes:
-                    labels = {f"{x['user']} → {x['car']}": x for x in likes}
-                    chosen = st.selectbox("เลือกเส้นที่จะลบ", list(labels), key="del_like")
-                    if st.button("ลบ LIKES", width="stretch"):
-                        x = labels[chosen]
-                        remove_like(x["user"], x["car"])
-                        done(f"ลบ {x['user']} -[:LIKES]-> {x['car']} แล้ว", "warning")
+                    del_labels = {f"{y['user']} → {y['car']}": y for y in likes}
+                    del_chosen = st.selectbox("เลือกเส้นที่จะลบ", list(del_labels), key="del_like")
                 else:
                     st.info("ยังไม่มี LIKES")
+            if likes and btn[2].button("ลบ LIKES", width="stretch", key="del_like_btn"):
+                y = del_labels[del_chosen]
+                remove_like(y["user"], y["car"])
+                done(f"ลบ {y['user']} -[:LIKES]-> {y['car']} แล้ว", "warning")
 
         # ---------------- TEST_DROVE ----------------
         with tab_td:
@@ -1013,20 +1044,21 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
                 (f"{u}: {o} → {n} ({d})", update_test_drive(u, o, d.isoformat(), n)) for u, o, n, d in changes
             ])
 
-            c1, c2, c3 = st.columns(3)
-            with c1:
+            top, btn, note = crud_columns()
+            with top[0]:
                 st.markdown("#### ➕ เพิ่ม TEST_DROVE")
                 if users and cars:
                     u = st.selectbox("User", users, key="td_user")
                     c = st.selectbox("Car", cars, key="td_car")
                     d = st.date_input("วันที่ทดลองขับ", value=date.today(), key="td_date")
-                    if st.button("บันทึก TEST_DROVE", type="primary", width="stretch"):
-                        created = add_test_drive(u, c, d.isoformat())
-                        msg = "บันทึก" if created else "อัปเดตวันที่"
-                        done(f"{msg} {u} -[:TEST_DROVE {{{d.isoformat()}}}]-> {c}")
                 else:
                     st.info("ต้องมีทั้ง User และ Car ก่อน")
-            with c2:
+            if users and cars and btn[0].button("บันทึก TEST_DROVE", type="primary", width="stretch", key="add_td_btn"):
+                created = add_test_drive(u, c, d.isoformat())
+                msg = "บันทึก" if created else "อัปเดตวันที่"
+                done(f"{msg} {u} -[:TEST_DROVE {{{d.isoformat()}}}]-> {c}")
+
+            with top[1]:
                 st.markdown("#### ✏️ แก้ไข TEST_DROVE")
                 if tds:
                     labels = {f"{x['user']} → {x['car']} ({x['test_date']})": x for x in tds}
@@ -1036,22 +1068,23 @@ with st.container(key="gc_panel"):  # แผงกระจกครอบเน
                                          key=f"edit_td_car_{chosen}")
                     new_d = st.date_input("วันที่", value=to_date(x["test_date"]) or date.today(),
                                           key=f"edit_td_date_{chosen}")
-                    if st.button("บันทึก TEST_DROVE", type="primary", width="stretch", key="edit_td_btn"):
-                        report([(f"{x['user']}: {x['car']} → {new_c} ({new_d})",
-                                 update_test_drive(x["user"], x["car"], new_d.isoformat(), new_c))])
                 else:
                     st.info("ยังไม่มี TEST_DROVE")
-            with c3:
+            if tds and btn[1].button("บันทึกการแก้ไข", type="primary", width="stretch", key="edit_td_btn"):
+                report([(f"{x['user']}: {x['car']} → {new_c} ({new_d})",
+                         update_test_drive(x["user"], x["car"], new_d.isoformat(), new_c))])
+
+            with top[2]:
                 st.markdown("#### 🗑️ ลบ TEST_DROVE")
                 if tds:
-                    labels = {f"{x['user']} → {x['car']} ({x['test_date']})": x for x in tds}
-                    chosen = st.selectbox("เลือกเส้นที่จะลบ", list(labels), key="del_td")
-                    if st.button("ลบ TEST_DROVE", width="stretch"):
-                        x = labels[chosen]
-                        remove_test_drive(x["user"], x["car"])
-                        done(f"ลบ {x['user']} -[:TEST_DROVE]-> {x['car']} แล้ว", "warning")
+                    del_labels = {f"{y['user']} → {y['car']} ({y['test_date']})": y for y in tds}
+                    del_chosen = st.selectbox("เลือกเส้นที่จะลบ", list(del_labels), key="del_td")
                 else:
                     st.info("ยังไม่มี TEST_DROVE")
+            if tds and btn[2].button("ลบ TEST_DROVE", width="stretch", key="del_td_btn"):
+                y = del_labels[del_chosen]
+                remove_test_drive(y["user"], y["car"])
+                done(f"ลบ {y['user']} -[:TEST_DROVE]-> {y['car']} แล้ว", "warning")
 
     # =====================================================================
     # Graph Explorer
