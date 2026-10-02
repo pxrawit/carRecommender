@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homework · ภูวฤทธิ์ แช่มมั่นคง</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#111; --ink2:#4b5563; --muted:#8a8f98; --line:#e5e7eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#fff; color:var(--ink); font-family:'Inter','IBM Plex Sans Thai',system-ui,sans-serif; line-height:1.55; }
+  main { max-width:1080px; margin:0 auto; padding:56px 20px 72px; }
+  .eyebrow { font-size:.74rem; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); }
+  h1 { font-size:clamp(2.2rem,6vw,3rem); font-weight:600; letter-spacing:-.02em; margin:.3rem 0 .4rem; line-height:1.1; }
+  .student { font-weight:500; margin:0 0 .4rem; }
+  .lead { color:var(--ink2); font-weight:300; margin:0; }
+  header { padding-bottom:28px; border-bottom:1px solid var(--line); margin-bottom:28px; }
+  .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+  .card { border:1px solid var(--line); border-radius:4px; padding:24px; display:flex; flex-direction:column; transition:border-color .15s; }
+  .card:hover { border-color:var(--ink); }
+  .num { font-size:2.6rem; font-weight:600; line-height:1; letter-spacing:-.02em; margin:.35rem 0 .7rem; }
+  h2 { font-size:1.2rem; font-weight:600; margin:0 0 .35rem; }
+  .desc { color:var(--ink2); font-size:.93rem; margin:0; }
+  .meta { color:var(--muted); font-size:.8rem; margin:.8rem 0 1rem; overflow-wrap:anywhere; }
+  .meta b { color:var(--ink2); font-weight:500; }
+  .btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:auto; }
+  .btn { display:inline-block; padding:.5rem .9rem; border:1px solid #d1d5db; border-radius:2px; color:var(--ink); text-decoration:none; font-size:.9rem; font-weight:500; background:#fff; }
+  .btn:hover { border-color:var(--ink); }
+  .btn.primary { background:var(--ink); border-color:var(--ink); color:#fff; }
+  .btn.primary:hover { background:#333; border-color:#333; }
+  footer { margin-top:28px; color:var(--muted); font-size:.85rem; }
+  footer a { color:var(--ink2); }
+  @media (max-width:720px) { .grid { grid-template-columns:1fr; } main { padding-top:36px; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Homework Hub · Neo4j</div>
+    <h1>Homework</h1>
+    <p class="student">ภูวฤทธิ์ แช่มมั่นคง · รหัสนักศึกษา 664245031</p>
+    <p class="lead">รวมการบ้านทั้ง 4 งาน เปิดดู ดาวน์โหลดไฟล์ เปิดใน Colab หรือดูโค้ดบน GitHub</p>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <div class="eyebrow">Homework</div><div class="num">01</div>
+      <h2>Club Recommendation Graph ด้วย Neo4j</h2>
+      <p class="desc">รายงานแนะนำชมรมจากเครือข่ายเพื่อนและความสนใจของนักเรียน (Student, Club, Interest · FRIEND_OF, MEMBER_OF)</p>
+      <p class="meta"><b>PDF</b> · hw1_Neo4jGraphDB.pdf</p>
+      <div class="btns">
+        <a class="btn primary" href="homework/hw1_Neo4jGraphDB.pdf" target="_blank" rel="noopener">เปิด PDF</a>
+        <a class="btn" href="homework/hw1_Neo4jGraphDB.pdf" download>ดาวน์โหลด</a>
+        <a class="btn" data-gh="homework/hw1_Neo4jGraphDB.pdf" href="https://github.com/pxrawit/carRecommender/blob/main/homework/hw1_Neo4jGraphDB.pdf" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="eyebrow">Homework</div><div class="num">02</div>
+      <h2>Car Recommender System ด้วย Graph (Colab)</h2>
+      <p class="desc">จำลองผู้ใช้ 10 คน รถ 10 รุ่น สร้างกราฟความชอบด้วย NetworkX แล้วแนะนำรถจากคนที่ชอบคล้ายกัน</p>
+      <p class="meta"><b>Jupyter Notebook</b> · hw2_Car_Recommender_System.ipynb</p>
+      <div class="btns">
+        <a class="btn primary" href="https://colab.research.google.com/drive/13stLswwxWIXYDtpie11vY-qSljzDWfnu?usp=sharing" target="_blank" rel="noopener">เปิดใน Colab</a>
+        <a class="btn" href="homework/hw2_Car_Recommender_System.ipynb" download>ดาวน์โหลด .ipynb</a>
+        <a class="btn" href="https://github.com/pxrawit/carRecommender/blob/main/homework/hw2_Car_Recommender_System.ipynb" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="eyebrow">Homework</div><div class="num">03</div>
+      <h2>Car Recommender ด้วย Neo4j Aura (Colab)</h2>
+      <p class="desc">ย้ายกราฟไป Neo4j Aura: สร้าง User · Car · LIKES · TEST_DROVE ด้วย Python driver และเขียน Cypher แนะนำรถให้ Alice</p>
+      <p class="meta"><b>Jupyter Notebook</b> · hw3_CarRecommender_Neo4j.ipynb</p>
+      <div class="btns">
+        <a class="btn primary" href="https://colab.research.google.com/drive/1BcClBwQDS0jVlHTcX0fpEBPwHrB4fw8I?usp=sharing" target="_blank" rel="noopener">เปิดใน Colab</a>
+        <a class="btn" href="homework/hw3_CarRecommender_Neo4j.ipynb" download>ดาวน์โหลด .ipynb</a>
+        <a class="btn" href="https://github.com/pxrawit/carRecommender/blob/main/homework/hw3_CarRecommender_Neo4j.ipynb" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="eyebrow">Homework</div><div class="num">04</div>
+      <h2>Car Recommended — เว็บแอป + Presentation</h2>
+      <p class="desc">ระบบแนะนำรถยนต์บนเว็บ (Streamlit + Neo4j Aura) พร้อมรูปรถ โมเดล 3D เพิ่ม/แก้ไข/ลบข้อมูล และสไลด์นำเสนอ</p>
+      <p class="meta"><b>PDF</b> · hw4_Car_Recommended_Presentation.pdf</p>
+      <div class="btns">
+        <a class="btn primary" href="https://carrecommender-dv7rqrvlfumdkqnrrkmecn.streamlit.app/" target="_blank" rel="noopener">เปิดเว็บแอป</a>
+        <a class="btn" href="homework/hw4_Car_Recommended_Presentation.pdf" target="_blank" rel="noopener">เปิดสไลด์ (PDF)</a>
+        <a class="btn" href="homework/hw4_Car_Recommended_Presentation.pdf" download>ดาวน์โหลด</a>
+        <a class="btn" href="https://github.com/pxrawit/carRecommender" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </section>
+  </div>
+
+  <footer>Source code ทั้งหมด: <a href="https://github.com/pxrawit/carRecommender" target="_blank" rel="noopener">github.com/pxrawit/carRecommender</a></footer>
+</main>
+</body>
+</html>
