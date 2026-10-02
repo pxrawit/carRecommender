@@ -9,7 +9,6 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from hub import render_hub
 from neo4j_service import (
     add_car,
     add_like,
@@ -134,14 +133,6 @@ st.html(
       .hero p { color: var(--ink-2); max-width: 620px; margin: 0; font-weight: 300; font-size: 1.05rem; }
 
       .hero .student { margin-top: .8rem; color: var(--ink); font-size: .95rem; font-weight: 500; }
-      .hub-hero .student { margin: 0 0 .5rem; font-size: 1.05rem; }
-      .block-container:not(:has(.st-key-gc_nav)) { padding-top: 2.5rem !important; }
-      .st-key-gc_back button {
-        background: transparent !important; border: 1px solid var(--line) !important; border-radius: 2px !important;
-        padding: .3rem .75rem !important; min-height: 0 !important; color: var(--ink-2) !important; white-space: nowrap;
-      }
-      .st-key-gc_back button p { color: inherit !important; font-size: .85rem; }
-      .st-key-gc_back button:hover { border-color: var(--ink) !important; color: var(--ink) !important; }
 
       /* ---------- ส่วนประกอบทั่วไป ---------- */
       [data-testid="stMetric"] { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 1rem 1.2rem; }
@@ -585,38 +576,8 @@ PAGES = {
     "Admin / Setup": "ตั้งค่า",
 }
 
-# view = "hub" (หน้าแรก รวมการบ้าน ไม่มีแถบเมนู) หรือ "app" (เว็บ Car Recommended)
-st.session_state.setdefault("view", "hub")
-
-
-def open_car_app() -> None:
-    """ปุ่มในหน้า Hub: เข้าเว็บ Car Recommended ที่หน้าภาพรวม"""
-    st.session_state["view"] = "app"
-    st.session_state["nav"] = "Dashboard"
-
-
-def back_to_hub() -> None:
-    st.session_state["view"] = "hub"
-
-
-# ---------------- หน้าแรก: Homework Hub ----------------
-if st.session_state["view"] == "hub":
-    st.html(
-        f"""
-        <div class="hero hub-hero">
-          <div class="eyebrow">Homework Hub · Neo4j</div>
-          <div class="hero-title">Homework</div>
-          <div class="student">{STUDENT}</div>
-          <p>รวมการบ้านทั้ง 4 งาน ดาวน์โหลดไฟล์ เปิดใน Colab หรือดูโค้ดบน GitHub</p>
-        </div>
-        """
-    )
-    render_hub(open_car_app)
-    st.stop()
-
-# ---------------- แถบเมนูด้านบน (เฉพาะเว็บ Car) ----------------
+# ---------------- แถบเมนูด้านบน ----------------
 with st.container(key="gc_nav", horizontal=True, vertical_alignment="center", gap="medium"):
-    st.button("← Homework Hub", key="gc_back", on_click=back_to_hub)
     st.html('<div class="gc-brand">Car <span>Recommended</span></div>')
     st.session_state.setdefault("nav", "Dashboard")
     page = st.segmented_control(
@@ -628,7 +589,7 @@ with st.container(key="gc_nav", horizontal=True, vertical_alignment="center", ga
         label_visibility="collapsed",
     ) or "Dashboard"
 
-require_connection()  # หน้าอื่นนอกจาก Hub ต้องต่อ Neo4j
+require_connection()
 
 st.html(
     f"""
