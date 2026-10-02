@@ -417,39 +417,77 @@ def df(rows: list[dict], columns: list[str] | None = None) -> pd.DataFrame:
 VIS_NETWORK_JS = "https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"
 
 
-def draw_graph(rows: list[dict], focus: str | None = None, height: int = 620) -> None:
-    """กราฟแบบโต้ตอบในกรอบสี่เหลี่ยม: scroll = ซูม, ลาก = เลื่อน, คลิก node = ไฮไลต์เพื่อนบ้าน"""
-    degree: dict[str, int] = {}
+def draw_graph(rows: list[dict], focus: str | None = None, height: int = 640) -> None:
+    """
+    กราฟแบบจัดเป็นคอลัมน์ อ่านง่าย: User อยู่ซ้าย · Car อยู่ขวา
+    (ถ้าเลือก User: คนที่เลือกอยู่ซ้าย · รถอยู่กลาง · คนที่ชอบรถเหมือนกันอยู่ขวา)
+    เอาเมาส์ชี้หรือคลิก node เพื่อไฮไลต์เฉพาะเส้นที่เกี่ยวข้อง
+    """
+    users, cars = [], []
     for r in rows:
-        for k in (f"U:{r['user']}", f"C:{r['car']}"):
-            degree[k] = degree.get(k, 0) + 1
+        if r["user"] not in users:
+            users.append(r["user"])
+        if r["car"] not in cars:
+            cars.append(r["car"])
 
-    nodes: dict[str, dict] = {}
-    edges: list[dict] = []
+    def order(items: list[str], key_of, other_pos: dict[str, float]) -> list[str]:
+        """เรียงตามตำแหน่งเฉลี่ยของ node ที่เชื่อมอยู่ เพื่อให้เส้นไขว้กันน้อยที่สุด"""
+        def bary(item: str) -> float:
+            ys = [other_pos[o] for o in key_of(item) if o in other_pos]
+            return sum(ys) / len(ys) if ys else 0.0
+        return sorted(items, key=lambda it: (bary(it), it))
+
+    cars_of = lambda u: [r["car"] for r in rows if r["user"] == u]
+    users_of = lambda c: [r["user"] for r in rows if r["car"] == c]
+
+    def spread(items: list[str], gap: int) -> dict[str, float]:
+        return {it: (i - (len(items) - 1) / 2) * gap for i, it in enumerate(items)}
+
+    pos: dict[str, tuple[float, float]] = {}
+    if focus and focus in users:
+        others = [u for u in users if u != focus]
+        car_y = spread(sorted(cars), 110)
+        other_y = spread(order(others, cars_of, car_y), 70)
+        car_y = spread(order(cars, lambda c: [u for u in users_of(c) if u != focus], other_y), 110)
+        other_y = spread(order(others, cars_of, car_y), 70)
+        pos[f"U:{focus}"] = (-430, 0)
+        pos.update({f"C:{c}": (0, y) for c, y in car_y.items()})
+        pos.update({f"U:{u}": (430, y) for u, y in other_y.items()})
+    else:
+        user_y = spread(sorted(users), 58)
+        car_y = spread(order(cars, users_of, user_y), 58)
+        user_y = spread(order(users, cars_of, car_y), 58)
+        car_y = spread(order(cars, users_of, user_y), 58)
+        pos.update({f"U:{u}": (-330, y) for u, y in user_y.items()})
+        pos.update({f"C:{c}": (330, y) for c, y in car_y.items()})
+
+    likes_n = {u: sum(1 for r in rows if r["user"] == u and r["rel"] == "LIKES") for u in users}
+    liked_n = {c: sum(1 for r in rows if r["car"] == c and r["rel"] == "LIKES") for c in cars}
+    nodes = [
+        {"id": f"U:{u}", "label": u, "group": "focus" if u == focus else "user",
+         "x": pos[f"U:{u}"][0], "y": pos[f"U:{u}"][1], "title": f"User: {u} · ชอบ {likes_n[u]} คัน"}
+        for u in users
+    ] + [
+        {"id": f"C:{c}", "label": c, "group": "car",
+         "x": pos[f"C:{c}"][0], "y": pos[f"C:{c}"][1], "title": f"Car: {c} · มีคนชอบ {liked_n[c]} คน"}
+        for c in cars
+    ]
+    edges = []
     for r in rows:
         u, c = f"U:{r['user']}", f"C:{r['car']}"
-        nodes.setdefault(u, {
-            "id": u, "label": r["user"], "group": "focus" if r["user"] == focus else "user",
-            "value": degree[u], "title": f"User: {r['user']} · {degree[u]} เส้น",
-        })
-        nodes.setdefault(c, {
-            "id": c, "label": r["car"], "group": "car", "title": f"Car: {r['car']} · {degree[c]} เส้น",
-        })
         if r["rel"] == "TEST_DROVE":
             d = r.get("test_date") or ""
-            edges.append({
-                "from": u, "to": c, "label": d, "dashes": True, "rel": "TEST_DROVE",
-                "title": f"{r['user']} ลองขับ {r['car']} {d}",
-                "color": {"color": "#c2410c", "highlight": "#9a3412", "hover": "#9a3412"},
-            })
+            edges.append({"from": u, "to": c, "rel": "TEST_DROVE", "label": d, "dashes": [6, 5], "width": 2,
+                          "title": f"{r['user']} ลองขับ {r['car']} {d}", "base": "#c2410c",
+                          "smooth": {"type": "curvedCW", "roundness": 0.08}})
         else:
-            edges.append({
-                "from": u, "to": c, "rel": "LIKES", "title": f"{r['user']} ชอบ {r['car']}",
-                "color": {"color": "#c7cbd1", "highlight": "#111111", "hover": "#4b5563"},
-            })
+            edges.append({"from": u, "to": c, "rel": "LIKES", "title": f"{r['user']} ชอบ {r['car']}",
+                          "base": "#9ca3af", "width": 1.4})
 
     # ป้องกัน "</script>" ในชื่อจาก database หลุดออกจากแท็ก script
-    data = json.dumps({"nodes": list(nodes.values()), "edges": edges}, ensure_ascii=False).replace("</", "<\\/")
+    data = json.dumps({"nodes": nodes, "edges": edges}, ensure_ascii=False).replace("</", "<\\/")
+    left = "User ที่เลือก" if focus else "User"
+    heads = [left, "รถที่ชอบ / ลองขับ", "คนที่ชอบรถเหมือนกัน"] if focus else ["User", "Car"]
 
     st.iframe(
         f"""
@@ -458,102 +496,116 @@ def draw_graph(rows: list[dict], focus: str | None = None, height: int = 620) ->
           html, body {{ margin: 0; background: #fff; font-family: 'Inter', 'IBM Plex Sans Thai', system-ui, sans-serif; }}
           #wrap {{
             position: relative; height: {height}px; border-radius: 4px; overflow: hidden; box-sizing: border-box;
-            background: #fafafa; border: 1px solid #e5e7eb;
+            background: #fff; border: 1px solid #e5e7eb;
           }}
-          #net {{ position: absolute; inset: 0; }}
-          .bar {{ position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 5; }}
+          #net {{ position: absolute; inset: 44px 0 40px 0; }}
+          .heads {{
+            position: absolute; top: 0; left: 0; right: 0; height: 44px; display: flex; align-items: center;
+            border-bottom: 1px solid #e5e7eb; padding: 0 150px 0 14px; gap: 8px; z-index: 4; background: #fff;
+          }}
+          .heads span {{ flex: 1; text-align: center; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #8a8f98; }}
+          .bar {{ position: absolute; top: 8px; right: 10px; display: flex; gap: 6px; z-index: 5; }}
           .bar button {{
             background: #fff; color: #111; border: 1px solid #d1d5db;
-            border-radius: 2px; padding: 6px 11px; font-size: 13px; cursor: pointer; font-family: inherit;
+            border-radius: 2px; padding: 4px 10px; font-size: 13px; cursor: pointer; font-family: inherit;
           }}
           .bar button:hover {{ border-color: #111; }}
-          .hint, .legend {{
-            position: absolute; left: 12px; z-index: 5; font-size: 12px; color: #4b5563;
-            background: rgba(255,255,255,.92); border: 1px solid #e5e7eb;
-            border-radius: 2px; padding: 6px 10px; pointer-events: none;
+          .legend {{
+            position: absolute; left: 0; right: 0; bottom: 0; height: 40px; z-index: 5; font-size: 12px; color: #4b5563;
+            background: #fff; border-top: 1px solid #e5e7eb; padding: 0 14px;
+            display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
           }}
-          .hint {{ top: 12px; }}
-          .legend {{ bottom: 12px; display: flex; gap: 14px; align-items: center; }}
-          .dot {{ display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }}
-          .box {{ display: inline-block; width: 14px; height: 10px; border-radius: 3px; margin-right: 5px; background: #fff; border: 1.5px solid #111; vertical-align: -1px; }}
-          .ln {{ display: inline-block; width: 22px; border-top: 2px solid #c7cbd1; margin-right: 5px; vertical-align: 3px; }}
+          .legend .hint {{ margin-left: auto; color: #8a8f98; }}
+          .pill {{ display: inline-block; width: 22px; height: 12px; border-radius: 6px; margin-right: 6px; vertical-align: -2px; }}
+          .box {{ display: inline-block; width: 20px; height: 12px; margin-right: 6px; background: #fff; border: 1.5px solid #111; vertical-align: -2px; box-sizing: border-box; }}
+          .ln {{ display: inline-block; width: 24px; border-top: 2px solid #9ca3af; margin-right: 6px; vertical-align: 3px; }}
           .ln.dash {{ border-top: 2px dashed #c2410c; }}
           div.vis-tooltip {{
-            background: #fff !important; color: #111 !important; border: 1px solid #d1d5db !important;
-            border-radius: 8px !important; font-family: inherit !important; font-size: 12px !important; padding: 6px 9px !important;
+            background: #111 !important; color: #fff !important; border: 0 !important;
+            border-radius: 2px !important; font-family: inherit !important; font-size: 12px !important; padding: 6px 9px !important;
           }}
         </style>
         <div id="wrap">
+          <div class="heads">{"".join(f"<span>{html.escape(h)}</span>" for h in heads)}</div>
           <div id="net"></div>
-          <div class="hint">scroll = ซูม · ลาก = เลื่อน · คลิก node = ไฮไลต์</div>
           <div class="bar">
             <button id="zin" title="ซูมเข้า">＋</button>
             <button id="zout" title="ซูมออก">－</button>
-            <button id="fit" title="แสดงทั้งหมด">พอดีกรอบ</button>
-            <button id="phys" title="จัดวางใหม่">จัดวางใหม่</button>
+            <button id="fit" title="กลับตำแหน่งเดิม">รีเซ็ต</button>
           </div>
           <div class="legend">
-            <span><span class="dot" style="background:#9ca3af"></span>User</span>
-            <span><span class="dot" style="background:#111"></span>User ที่เลือก</span>
+            <span><span class="pill" style="background:#111"></span>{html.escape(left)}</span>
+            {'<span><span class="pill" style="background:#6b7280"></span>User อื่น</span>' if focus else ''}
             <span><span class="box"></span>Car</span>
-            <span><span class="ln"></span>LIKES</span>
-            <span><span class="ln dash"></span>TEST_DROVE</span>
+            <span><span class="ln"></span>LIKES (ชอบ)</span>
+            <span><span class="ln dash"></span>TEST_DROVE (ลองขับ)</span>
+            <span class="hint">ชี้หรือคลิกที่ชื่อเพื่อดูเฉพาะเส้นของคนนั้น / รถคันนั้น</span>
           </div>
         </div>
         <script>
           const data = {data};
+          const HAS_FOCUS = {json.dumps(bool(focus))};
+          data.edges.forEach((e, i) => {{ e.id = i; e.color = {{ color: e.base, highlight: e.base, hover: e.base }}; }});
+          const home = Object.fromEntries(data.nodes.map(n => [n.id, {{ x: n.x, y: n.y }}]));
           const nodes = new vis.DataSet(data.nodes), edges = new vis.DataSet(data.edges);
+          const pill = (bg) => ({{
+            shape: "box", margin: {{ top: 8, bottom: 8, left: 14, right: 14 }}, shapeProperties: {{ borderRadius: 16 }},
+            font: {{ color: "#ffffff", size: 15, face: "Inter, IBM Plex Sans Thai, sans-serif" }},
+            color: {{ background: bg, border: bg, highlight: {{ background: bg, border: "#111" }}, hover: {{ background: bg, border: "#111" }} }},
+          }});
           const network = new vis.Network(document.getElementById("net"), {{ nodes, edges }}, {{
-            autoResize: true,
-            nodes: {{
-              font: {{ color: "#111111", size: 14, strokeWidth: 4, strokeColor: "#fafafa" }},
-              borderWidth: 2, scaling: {{ min: 10, max: 26 }},
-            }},
+            autoResize: true, physics: false,
+            nodes: {{ borderWidth: 1.5, widthConstraint: {{ minimum: 70 }} }},
             groups: {{
-              user:  {{ shape: "dot", color: {{ background: "#9ca3af", border: "#ffffff", highlight: {{ background: "#4b5563", border: "#111" }}, hover: {{ background: "#6b7280", border: "#111" }} }} }},
-              focus: {{ shape: "dot", color: {{ background: "#111111", border: "#ffffff", highlight: {{ background: "#111111", border: "#4b5563" }}, hover: {{ background: "#111111", border: "#4b5563" }} }} }},
-              car:   {{ shape: "box", margin: 9, shapeProperties: {{ borderRadius: 2 }},
-                       font: {{ color: "#111111", strokeWidth: 0, size: 13 }}, borderWidth: 1.5,
-                       color: {{ background: "#ffffff", border: "#111111", highlight: {{ background: "#f3f4f6", border: "#111" }}, hover: {{ background: "#f3f4f6", border: "#111" }} }} }},
+              user: pill(HAS_FOCUS ? "#6b7280" : "#111111"),
+              focus: pill("#111111"),
+              car: {{
+                shape: "box", margin: {{ top: 8, bottom: 8, left: 12, right: 12 }}, shapeProperties: {{ borderRadius: 2 }},
+                font: {{ color: "#111111", size: 15, face: "Inter, IBM Plex Sans Thai, sans-serif" }},
+                color: {{ background: "#ffffff", border: "#111111", highlight: {{ background: "#f3f4f6", border: "#111" }}, hover: {{ background: "#f3f4f6", border: "#111" }} }},
+              }},
             }},
             edges: {{
-              arrows: {{ to: {{ enabled: true, scaleFactor: 0.55 }} }},
-              width: 1.6, selectionWidth: 1.5, hoverWidth: 0.8,
-              smooth: {{ type: "dynamic" }},
-              font: {{ size: 10, color: "#c2410c", strokeWidth: 3, strokeColor: "#fafafa", align: "middle" }},
+              arrows: {{ to: {{ enabled: true, scaleFactor: 0.5 }} }},
+              smooth: {{ type: "cubicBezier", forceDirection: "horizontal", roundness: 0.45 }},
+              font: {{ size: 11, color: "#c2410c", strokeWidth: 4, strokeColor: "#ffffff", align: "middle" }},
+              selectionWidth: 0, hoverWidth: 0,
             }},
-            physics: {{
-              solver: "forceAtlas2Based",
-              forceAtlas2Based: {{ gravitationalConstant: -70, springLength: 130, springConstant: 0.05, avoidOverlap: 0.4 }},
-              stabilization: {{ iterations: 300 }},
-            }},
-            interaction: {{ hover: true, tooltipDelay: 120, zoomSpeed: 0.7, keyboard: true }},
+            interaction: {{ hover: true, tooltipDelay: 120, zoomSpeed: 0.6, dragNodes: true }},
           }});
+          const fit = (ms) => network.fit({{ animation: ms ? {{ duration: ms }} : false }});
+          network.once("afterDrawing", () => fit(0));
 
-          const freeze = () => network.setOptions({{ physics: false }});
-          network.once("stabilizationIterationsDone", () => {{ freeze(); network.fit({{ animation: {{ duration: 500 }} }}); }});
+          const zoom = (f) => network.moveTo({{ scale: network.getScale() * f, animation: {{ duration: 200 }} }});
+          document.getElementById("zin").onclick = () => zoom(1.25);
+          document.getElementById("zout").onclick = () => zoom(1 / 1.25);
 
-          const zoom = (f) => network.moveTo({{ scale: network.getScale() * f, animation: {{ duration: 250 }} }});
-          document.getElementById("zin").onclick = () => zoom(1.3);
-          document.getElementById("zout").onclick = () => zoom(1 / 1.3);
-          document.getElementById("fit").onclick = () => network.fit({{ animation: {{ duration: 400 }} }});
-          document.getElementById("phys").onclick = () => {{
-            network.setOptions({{ physics: true }}); network.stabilize(200);
-            network.once("stabilized", () => {{ freeze(); network.fit({{ animation: {{ duration: 400 }} }}); }});
-          }};
-
-          // คลิก node: ไฮไลต์ node ที่เชื่อมกัน ที่เหลือจางลง
-          const reset = () => {{
-            nodes.update(nodes.getIds().map(id => ({{ id, opacity: 1 }})));
-            edges.update(edges.get().map(e => ({{ id: e.id, hidden: false }})));
-          }};
-          network.on("selectNode", (p) => {{
-            const id = p.nodes[0], keep = new Set([id, ...network.getConnectedNodes(id)]);
+          // ไฮไลต์: node ที่ชี้/คลิก กับสิ่งที่เชื่อมอยู่ชัด ที่เหลือจาง
+          let pinned = null;
+          const show = (id) => {{
+            if (id === null) {{
+              nodes.update(nodes.getIds().map(n => ({{ id: n, opacity: 1 }})));
+              edges.update(data.edges.map(e => ({{ id: e.id, width: e.width, color: {{ color: e.base, highlight: e.base, hover: e.base, opacity: 1 }} }})));
+              return;
+            }}
+            const keep = new Set([id, ...network.getConnectedNodes(id)]);
             const keepEdges = new Set(network.getConnectedEdges(id));
-            nodes.update(nodes.getIds().map(n => ({{ id: n, opacity: keep.has(n) ? 1 : 0.15 }})));
-            edges.update(edges.get().map(e => ({{ id: e.id, hidden: !keepEdges.has(e.id) }})));
-          }});
-          network.on("deselectNode", reset);
+            nodes.update(nodes.getIds().map(n => ({{ id: n, opacity: keep.has(n) ? 1 : 0.18 }})));
+            edges.update(data.edges.map(e => {{
+              const on = keepEdges.has(e.id);
+              const c = on ? (e.rel === "LIKES" ? "#111111" : e.base) : e.base;
+              return {{ id: e.id, width: on ? e.width + 1 : e.width, color: {{ color: c, highlight: c, hover: c, opacity: on ? 1 : 0.08 }} }};
+            }}));
+          }};
+          network.on("hoverNode", (p) => {{ if (pinned === null) show(p.node); }});
+          network.on("blurNode", () => {{ if (pinned === null) show(null); }});
+          network.on("click", (p) => {{ pinned = p.nodes.length ? p.nodes[0] : null; show(pinned); }});
+
+          document.getElementById("fit").onclick = () => {{
+            pinned = null; show(null); network.unselectAll();
+            nodes.update(Object.entries(home).map(([id, p]) => ({{ id, x: p.x, y: p.y }})));
+            fit(300);
+          }};
         </script>
         """,
         height=height + 4,
